@@ -24,19 +24,16 @@ contract StandardCampaign {
         uint256 stake;
         // Fundings (contains funders)
         Fundings[] fundings;
-        // Child projects
-        uint256[] childProjectIDs;
+        // Child projects & All child projects (contains IDs)
+        uint256[] directChildProjects;
+        uint256[] allChildProjects;
     }
 
     // Mapping of campaign IDs to campaigns, IDs are numbers starting from 0
     mapping(uint256 => Campaign) public campaigns;
     uint256 public campaignCount = 0;
 
-    // Minimum stake required to create a campaign
-    uint256 public minStake = 0.0025 ether;
-
     struct Project {
-        //ADD APPLICATION REQUIRED
         // Description of the project
         string title;
         string metadata;
@@ -49,12 +46,12 @@ contract StandardCampaign {
         // Workers
         address[] workers;
         address[] pastWorkers;
-        // Completion Level
-        uint256 completionLevel;
-        // Child Tasks it contains
-        uint256[] childTaskIDs;
-        // Parent campaign
-        uint256 parentCampaignID;
+        // Parent Campaign & Project (contains IDs)
+        uint256 parentCampaign;
+        uint256 parentProject;
+        // Child Tasks & Projects (contains IDs)
+        uint256[] childProjects;
+        uint256[] childTasks;
     }
 
     // Mapping of project IDs to projects, IDs are numbers starting from 0
@@ -74,8 +71,8 @@ contract StandardCampaign {
         address payable worker;
         // Completion
         bool completed;
-        // Parent projectOk
-        uint256 parentProjectID;
+        // Parent Campaign & Project (contains IDs)
+        uint256 parentProject;
     }
 
     // Mapping of task IDs to tasks, IDs are numbers starting from 0
@@ -105,6 +102,13 @@ contract StandardCampaign {
         Gate,
         Closed
     }
+
+    // Minimum stake required to create a Private campaign
+    uint256 public minStake = 0.0025 ether;
+    // Minimum stake required to create an Open Campaign
+    uint256 public minOpenStake = 0.025 ether;
+    // Minimum stake required to enroll in a Project
+    uint256 public enrolStake = 0.0025 ether;
     /// END OF STRUCTS DECLARATIONS
     /// ***
 
@@ -117,6 +121,20 @@ contract StandardCampaign {
     }
     modifier isPastTimestamp(uint256 timestamp) {
         require(timestamp < block.timestamp, "Timestamp must be in the past");
+        _;
+    }
+
+    // Does it exist?
+    modifier isCampaignExisting(uint256 _id) {
+        require(_id > campaignCount, "Campaign does not exist");
+        _;
+    }
+    modifier isProjectExisting(uint256 _id) {
+        require(_id > projectCount, "Project does not exist");
+        _;
+    }
+    modifier isTaskExisting(uint256 _id) {
+        require(_id > taskCount, "Task does not exist");
         _;
     }
 
@@ -410,33 +428,42 @@ contract StandardCampaign {
 
     /// ***
     /// PROJECT WRITE FUNCTIONS
-    // Create a new project
+    // Create a new project ⚠️
     function makeProject(
         string memory _title,
         string memory _metadata,
         uint256 _deadline,
-        uint256 _parentCampaignID
-    ) public returns (uint256) {
-        require(_deadline > block.timestamp, "Deadline must be in the future");
-
+        uint256 _parentCampaign,
+        uint256 _parentProject
+    )
+        public
+        isFutureTimestamp(_deadline)
+        isCampaignExisting(_parentCampaign)
+        returns (uint256)
+    {
         Project storage project = projects[projectCount];
 
         project.title = _title;
         project.metadata = _metadata;
         project.creationTime = block.timestamp;
         project.deadline = _deadline;
+        project.status = ProjectStatus.GenesisGate;
 
-        // Add parent campaign to project and vice versa
-        project.parentCampaignID = _parentCampaignID;
-        campaigns[_parentCampaignID].childProjectIDs.push(projectCount);
+        // Parent Campaign
+        project.parentCampaign = _parentCampaign;
+        project.parentProject = _parentProject; // references itself if at the top level
 
-        // If this is the only project in the campaign, give it maximum weight of 1000
-        if ((campaigns[_parentCampaignID].childProjectIDs.length) == 0) {
-            project.weight = 1000;
+        if (_parentProject != projectCount) {
+            // If this is not the top level project, add it to the parent project
+            projects[_parentProject].childProjects.push(projectCount);
+        } else {
+            // If this is a top level project, add it in the parent campaign
+            campaigns[_parentCampaign].directChildProjects.push(projectCount);
         }
 
-        projectCount++;
+        campaigns[_parentCampaign].allChildProjects.push(projectCount);
 
+        projectCount++;
         return projectCount - 1;
     }
 
@@ -464,11 +491,11 @@ contract StandardCampaign {
         task.completed = false;
 
         // Add parent project to task and vice versa
-        task.parentProjectID = _parentProjectID;
-        projects[_parentProjectID].childTaskIDs.push(taskCount);
+        task.parentProject = _parentProjectID;
+        projects[_parentProjectID].childTasks.push(taskCount);
 
         // If this is the only task in the project, give it maximum weight of 1000
-        if ((projects[_parentProjectID].childTaskIDs.length) == 0) {
+        if ((projects[_parentProjectID].childTasks.length) == 0) {
             task.weight = 1000;
         }
 

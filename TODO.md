@@ -1,9 +1,25 @@
 # **P1**
 
-[-] Assign roles by owner.
-[-] UpdateCampaign single function (default values will be placed in front-end)
-[-] Make stage/gate infra.
-[-] Locked funds entry in the campaign
+[-] Project status _!infra_
+[-] Locked funds entry in the campaign _!infra_
+[-] Campaign Worker Proposal _!infra_
+[-] Project Worker Proposal _!infra_
+[-] Worker enrollment _!infra_
+[-] Task submission _!infra_
+[-] Application requirement _!infra_
+
+[-] Application acceptance _>func_
+[-] Project update _>func_
+[-] Project/Campaign Locked Funds _>func_
+[-] Make stage/gate infra _>func_
+[-] Locked funds _>func_
+[-] Project Worker Proposal _>func_
+[-] Acceptance/declining of submissions _>func_
+[-] fake ^Dispute with event _>func_
+[-] Worker enrollment _>func_
+[-] Task submission _>func_
+[-] Task getSubmissions _>func_
+[-] Task Value Calculation _>func_
 
 # **P2**
 
@@ -32,3 +48,6 @@
 [x] Require stake to prevent spamming of campaigns.
 [x] Create a "status" on campaign for closed, open and archived campaigns.
 [x] Clean up functions with modifiers.
+[X] Assign roles by owner.
+[X] UpdateCampaign single function (default values will be placed in front-end)
+[x] project nesting _!infra_
