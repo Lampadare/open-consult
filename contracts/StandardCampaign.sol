@@ -16,9 +16,13 @@ contract StandardCampaign {
         CampaignStatus status;
         // Stakeholders
         address payable creator;
+        address payable[] owners;
+        address payable[] acceptors;
+        address payable[] workers;
+        address payable[] allTimeStakeholders;
         // Stake
         uint256 stake;
-        // Funding
+        // Fundings (contains funders)
         Fundings[] fundings;
         // Child projects
         uint256[] childProjectIDs;
@@ -32,6 +36,7 @@ contract StandardCampaign {
     uint256 public minStake = 0.0025 ether;
 
     struct Project {
+        //ADD APPLICATION REQUIRED
         // Description of the project
         string title;
         string metadata;
@@ -40,8 +45,10 @@ contract StandardCampaign {
         // Timestamps
         uint256 creationTime;
         uint256 deadline;
+        ProjectStatus status;
         // Workers
         address[] workers;
+        address[] pastWorkers;
         // Completion Level
         uint256 completionLevel;
         // Child Tasks it contains
@@ -64,7 +71,7 @@ contract StandardCampaign {
         uint256 creationTime;
         uint256 deadline;
         // Worker
-        address payable workerAssigned;
+        address payable worker;
         // Completion
         bool completed;
         // Parent projectOk
@@ -88,33 +95,199 @@ contract StandardCampaign {
     }
 
     enum CampaignStatus {
-        Open,
+        Running,
         Closed
     }
 
+    enum ProjectStatus {
+        GenesisGate,
+        Stage,
+        Gate,
+        Closed
+    }
     /// END OF STRUCTS DECLARATIONS
     /// ***
 
     /// ***
+    /// MODIFIERS
+    // Timestamps
+    modifier isFutureTimestamp(uint256 timestamp) {
+        require(timestamp > block.timestamp, "Timestamp must be in the future");
+        _;
+    }
+    modifier isPastTimestamp(uint256 timestamp) {
+        require(timestamp < block.timestamp, "Timestamp must be in the past");
+        _;
+    }
+
+    // Campaign Roles
+    modifier isCampaignCreator(uint256 _id) {
+        require(
+            msg.sender == campaigns[_id].creator,
+            "Sender must be the campaign creator"
+        );
+        _;
+    }
+    modifier isCampaignOwner(uint256 _id) {
+        bool isOwner = false;
+        for (uint256 i = 0; i < campaigns[_id].owners.length; i++) {
+            if (msg.sender == campaigns[_id].owners[i]) {
+                isOwner = true;
+                break;
+            }
+        }
+        require(isOwner, "Sender must be an owner of the campaign");
+        _;
+    }
+    modifier isCampaignAcceptor(uint256 _id) {
+        bool isAcceptor = false;
+        for (uint256 i = 0; i < campaigns[_id].acceptors.length; i++) {
+            if (msg.sender == campaigns[_id].acceptors[i]) {
+                isAcceptor = true;
+                break;
+            }
+        }
+        require(isAcceptor, "Sender must be an acceptor of the campaign");
+        _;
+    }
+    modifier isCampaignWorker(uint256 _id) {
+        bool isWorker = false;
+        for (uint256 i = 0; i < campaigns[_id].workers.length; i++) {
+            if (msg.sender == campaigns[_id].workers[i]) {
+                isWorker = true;
+                break;
+            }
+        }
+        require(isWorker, "Sender must be a worker of the campaign");
+        _;
+    }
+    modifier isCampaignStakeholder(uint256 _id) {
+        bool isStakeholder = false;
+        for (
+            uint256 i = 0;
+            i < campaigns[_id].allTimeStakeholders.length;
+            i++
+        ) {
+            if (msg.sender == campaigns[_id].allTimeStakeholders[i]) {
+                isStakeholder = true;
+                break;
+            }
+        }
+        require(isStakeholder, "Sender must be a stakeholder of the campaign");
+        _;
+    }
+
+    // Campaign Styles
+    modifier isCampaignOpen(uint256 _id) {
+        require(
+            campaigns[_id].style == CampaignStyle.Open,
+            "Campaign must be open"
+        );
+        _;
+    }
+    modifier isCampaignPrivate(uint256 _id) {
+        require(
+            campaigns[_id].style == CampaignStyle.Private,
+            "Campaign must be private"
+        );
+        _;
+    }
+
+    // Campaign Statuses
+    modifier isCampaignRunning(uint256 _id) {
+        require(
+            campaigns[_id].status == CampaignStatus.Running,
+            "Campaign must be running"
+        );
+        _;
+    }
+    modifier isCampaignClosed(uint256 _id) {
+        require(
+            campaigns[_id].status == CampaignStatus.Closed,
+            "Campaign must be closed"
+        );
+        _;
+    }
+
+    // Project Roles
+    modifier isWorkerOnProject(uint256 _id) {
+        bool isWorker = false;
+        for (uint256 i = 0; i < projects[_id].workers.length; i++) {
+            if (msg.sender == projects[_id].workers[i]) {
+                isWorker = true;
+                break;
+            }
+        }
+        require(isWorker, "Sender must be a worker on the project");
+        _;
+    }
+
+    // Task Roles
+    modifier isWorkerOnTask(uint256 _id) {
+        require(
+            msg.sender == tasks[_id].worker,
+            "Sender must be the task worker"
+        );
+        _;
+    }
+
+    // Stake & Funding
+    modifier isFundingIntended(uint256 _funding) {
+        require(
+            msg.value == _funding && _funding > 0,
+            "Ether sent must be equal to intended funding"
+        );
+        _;
+    }
+    modifier isStakeAndFundingIntended(uint256 _stake, uint256 _funding) {
+        require(
+            msg.value == _stake + _funding,
+            "Ether sent must be equal to intended stake"
+        );
+        _;
+    }
+    modifier isMoreThanMinStake(uint256 _stake) {
+        require(
+            _stake >= minStake,
+            "Intended stake must be greater or equal to minStake"
+        );
+        _;
+    }
+
+    /// END OF MODIFIERS
+    /// ***
+
+    /// ***
     /// CAMPAIGN WRITE FUNCTIONS
-    // Create a new campaign
+
+    /// OPEN-PRIVATE DUAL USE FUNCTIONS
+    // Create a new campaign, optionally fund it ✅
     function makeCampaign(
         string memory _title,
         string memory _metadata,
         CampaignStyle _style,
         uint256 _deadline,
-        CampaignStatus _status,
-        uint256 _stake
-    ) public payable returns (uint256) {
-        require(_deadline > block.timestamp, "Deadline must be in the future");
-        require(
-            _stake >= minStake,
-            "Intended stake must be greater or equal to minStake"
-        );
-        require(
-            msg.value == _stake,
-            "Ether sent must be equal to intended stake"
-        );
+        address payable[] memory _owners,
+        address payable[] memory _acceptors,
+        uint256 _stake,
+        uint256 _funding
+    )
+        public
+        payable
+        isMoreThanMinStake(_stake)
+        isStakeAndFundingIntended(_stake, _funding)
+        returns (uint256)
+    {
+        //PRIVATE CAMPAIGN REQ (open campaigns don't have deadlines)
+        if (
+            _style == CampaignStyle.Private ||
+            _style == CampaignStyle.PrivateThenOpen
+        ) {
+            require(
+                _deadline > block.timestamp,
+                "Deadline must be in the future"
+            );
+        }
 
         Campaign storage campaign = campaigns[campaignCount];
 
@@ -123,77 +296,53 @@ contract StandardCampaign {
         campaign.style = _style;
         campaign.creationTime = block.timestamp;
         campaign.deadline = _deadline;
-        campaign.status = _status;
+        campaign.status = CampaignStatus.Running;
         campaign.creator = payable(msg.sender);
+        campaign.owners.push(payable(msg.sender));
+        for (uint256 i = 0; i < _owners.length; i++) {
+            campaign.owners.push((_owners[i]));
+            campaign.allTimeStakeholders.push((_owners[i]));
+        }
+        for (uint256 i = 0; i < _acceptors.length; i++) {
+            campaign.acceptors.push((_acceptors[i]));
+            campaign.allTimeStakeholders.push((_acceptors[i]));
+        }
+        campaign.allTimeStakeholders.push(payable(msg.sender));
         campaign.stake = _stake;
 
-        campaignCount++;
+        if (_funding > 0) {
+            Fundings memory newFunding;
+            newFunding.funder = payable(msg.sender);
+            newFunding.funding = _funding;
+            newFunding.refunded = false;
+            campaign.fundings.push(newFunding);
+        }
 
+        campaignCount++;
         return campaignCount - 1;
     }
 
-    // Donate to a campaign
-    function fundCampaign(uint256 _id, uint256 _funding) public payable {
-        require(msg.value > 0, "Donation must be greater than 0");
-        require(
-            msg.value == _funding,
-            "Donation must be equal to intended funding"
-        );
-
+    // Donate to a campaign ✅
+    function fundCampaign(
+        uint256 _id,
+        uint256 _funding
+    ) public payable isFundingIntended(_funding) {
         Fundings memory newFunding;
         newFunding.funder = payable(msg.sender);
-        newFunding.funding = msg.value;
+        newFunding.funding = _funding;
         newFunding.refunded = false;
 
         Campaign storage campaign = campaigns[_id];
         campaign.fundings.push(newFunding);
     }
 
-    // Create campaign and fund it
-    function createAndFundCampaign(
-        string memory _title,
-        string memory _metadata,
-        CampaignStyle _style,
-        uint256 _deadline,
-        CampaignStatus _status,
-        uint256 _stake,
-        uint256 _funding
-    ) public payable returns (uint256) {
-        require(_deadline > block.timestamp, "Deadline must be in the future");
-        require(
-            _stake >= minStake,
-            "Intended stake must be greater or equal to minStake"
-        );
-        require(_funding > 0, "Funding must be greater than 0");
-        require(
-            _stake + _funding == msg.value,
-            "Total sent must be equal to intended stake + funding"
-        );
-
-        Campaign storage campaign = campaigns[campaignCount];
-
-        campaign.title = _title;
-        campaign.metadata = _metadata;
-        campaign.style = _style;
-        campaign.creationTime = block.timestamp;
-        campaign.deadline = _deadline;
-        campaign.status = _status;
-        campaign.creator = payable(msg.sender);
-        campaign.stake = _stake;
-
-        Fundings memory newFunding;
-        newFunding.funder = payable(msg.sender);
-        newFunding.funding = _funding;
-        newFunding.refunded = false;
-        campaign.fundings.push(newFunding);
-
-        campaignCount++;
-        return campaignCount - 1;
-    }
-
-    // Refund campaign funding
-    function refundCampaignFunding(uint256 _id, bool _drainContract) public {
-        require(_drainContract == true, "Just double checking.");
+    /// PRIVATE CAMPAIGN FUNCTIONS
+    // Refund campaign funding ⚠️ (needs checking for locked funds!!!)
+    function refundCampaignFunding(
+        uint256 _id,
+        bool _drainCampaign
+    ) public isCampaignPrivate(_id) isCampaignOwner(_id) {
+        require(_drainCampaign == true, "Just double checking.");
 
         Campaign storage campaign = campaigns[_id];
 
@@ -207,13 +356,16 @@ contract StandardCampaign {
         }
     }
 
-    // Refund campaign stake
-    function refundStake(uint256 _id) public {
+    // Refund closed campaign stake ✅
+    function refundStake(
+        uint256 _id
+    )
+        public
+        isCampaignPrivate(_id)
+        isCampaignClosed(_id)
+        isCampaignCreator(_id)
+    {
         Campaign storage campaign = campaigns[_id];
-        require(
-            msg.sender == campaign.creator,
-            "Only the campaign creator can refund the stake"
-        );
         require(campaign.stake > 0, "The campaign does not have a stake");
 
         uint256 stake = campaign.stake;
@@ -221,51 +373,39 @@ contract StandardCampaign {
         campaign.creator.transfer(stake);
     }
 
-    // Update campaign metadata
-    function updateMetadata(uint256 _id, string memory _metadata) public {
+    // Update Campaign ⚠️
+    function updateCampaign(
+        uint256 _id,
+        string memory _title,
+        string memory _metadata,
+        CampaignStyle _style,
+        uint256 _deadline,
+        CampaignStatus _status,
+        address payable[] memory _owners,
+        address payable[] memory _acceptors
+    )
+        public
+        isCampaignPrivate(_id)
+        isCampaignOwner(_id)
+        isFutureTimestamp(_deadline)
+    {
+        require(_owners.length > 0, "Campaign must have at least one owner");
+        if (_status == CampaignStatus.Closed) {
+            require(false, "Projects must be closed"); //⚠️⚠️⚠️
+        }
+
         Campaign storage campaign = campaigns[_id];
 
-        campaign.metadata = _metadata;
-    }
-
-    // Update campaign style
-    function updateCampaignStyle(uint256 _id, CampaignStyle _style) public {
-        Campaign storage campaign = campaigns[_id];
-
-        campaign.style = _style;
-    }
-
-    // Update campaign deadline
-    function updateCampaignDeadline(uint256 _id, uint256 _deadline) public {
-        Campaign storage campaign = campaigns[_id];
-
-        campaign.deadline = _deadline;
+        campaign.title = _title; //✅
+        campaign.metadata = _metadata; //✅
+        campaign.style = _style; //❌ (needs all private-to-open effects for transition)
+        campaign.deadline = _deadline; //⚠️ (can't be less than maximum settled time of current stage of contained projects)
+        campaign.status = _status; //⚠️ (can't be closed if there are open projects)
+        campaign.owners = _owners; //✅
+        campaign.acceptors = _acceptors; //✅
     }
 
     /// END OF CAMPAIGN WRITE FUNCTIONS
-    /// ***
-
-    /// ***
-    /// CAMPAIGN READ FUNCTIONS
-    // Get all campaigns
-    function getAllCampaigns() public view returns (Campaign[] memory) {
-        Campaign[] memory _campaigns = new Campaign[](campaignCount);
-
-        for (uint256 i = 0; i < campaignCount; i++) {
-            _campaigns[i] = campaigns[i];
-        }
-
-        return _campaigns;
-    }
-
-    // Get campaign donators & contributions
-    function getFundingsOfCampaign(
-        uint256 _id
-    ) public view returns (Fundings[] memory) {
-        return campaigns[_id].fundings;
-    }
-
-    /// END OF CAMPAIGN READ FUNCTIONS
     /// ***
 
     /// ***
@@ -341,7 +481,35 @@ contract StandardCampaign {
     /// ***
 
     /// ***
-    /// DEVELOPER FUNCTIONS
+    /// CAMPAIGN READ FUNCTIONS
+    // Get all campaigns ✅
+    function getAllCampaigns() public view returns (Campaign[] memory) {
+        Campaign[] memory _campaigns = new Campaign[](campaignCount);
+        for (uint256 i = 0; i < campaignCount; i++) {
+            _campaigns[i] = campaigns[i];
+        }
+        return _campaigns;
+    }
+
+    // Get campaign by ID ✅
+    function getCampaignByID(
+        uint256 _id
+    ) public view returns (Campaign memory) {
+        return campaigns[_id];
+    }
+
+    // Get campaign funders & contributions ❓(is this needed when we have getCampaignByID?)
+    function getFundingsOfCampaign(
+        uint256 _id
+    ) public view returns (Fundings[] memory) {
+        return campaigns[_id].fundings;
+    }
+
+    /// END OF CAMPAIGN READ FUNCTIONS
+    /// ***
+
+    /// ***
+    /// DEVELOPER FUNCTIONS (ONLY FOR TESTING) 🧑‍💻🧑‍💻🧑‍💻🧑‍💻🧑‍💻
     address public contractMaster;
 
     constructor() payable {
