@@ -1,12 +1,13 @@
 # **P1**
 
+[-] EVERYTHING must be settled at every gate
+
 [-] Project status _!infra_
 [-] Locked funds entry in the campaign _!infra_
 [-] Campaign Worker Proposal _!infra_
 [-] Project Worker Proposal _!infra_
 [-] Worker enrollment _!infra_
 [-] Task submission _!infra_
-[-] Application requirement _!infra_
 
 [-] Application acceptance _>func_
 [-] Project update _>func_
@@ -17,12 +18,14 @@
 [-] Acceptance/declining of submissions _>func_
 [-] fake ^Dispute with event _>func_
 [-] Worker enrollment _>func_
+[-] Worker leave function conditional on gate stage _>func_
 [-] Task submission _>func_
 [-] Task getSubmissions _>func_
 [-] Task Value Calculation _>func_
 
 # **P2**
 
+[-] Task reference in project _!infra_
 [-] Reopening campaign isn't possible.
 [-] Stake can only be recovered when campaignStatus is closed or campaignStyle made open.
 [-] Stake gets redistributed post-deadline if campaign isn't closed.
@@ -51,3 +54,4 @@
 [X] Assign roles by owner.
 [X] UpdateCampaign single function (default values will be placed in front-end)
 [x] project nesting _!infra_
+[x] Application requirement _!infra_

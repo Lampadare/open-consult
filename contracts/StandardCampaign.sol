@@ -42,8 +42,11 @@ contract StandardCampaign {
         // Timestamps
         uint256 creationTime;
         uint256 deadline;
+        NextMilestone nextMilestone;
         ProjectStatus status;
         // Workers
+        bool applicationRequired;
+        uint256[] applications;
         address[] workers;
         address[] pastWorkers;
         // Parent Campaign & Project (contains IDs)
@@ -79,6 +82,20 @@ contract StandardCampaign {
     mapping(uint256 => Task) public tasks;
     uint256 public taskCount = 0;
 
+    struct Application {
+        // Description of the application
+        string metadata;
+        address applicant;
+        bool accepted;
+        Fundings enrolStake;
+        // Parent Project (contains IDs)
+        uint256 parentProject;
+    }
+
+    // Mapping of task IDs to tasks, IDs are numbers starting from 0
+    mapping(uint256 => Application) public applications;
+    uint256 public applicationCount = 0;
+
     struct Fundings {
         address payable funder; // The address of the individual who contributed
         uint256 funding; // The amount of tokens the user contributed
@@ -100,13 +117,20 @@ contract StandardCampaign {
         GenesisGate,
         Stage,
         Gate,
+        Settled,
         Closed
+    }
+
+    struct NextMilestone {
+        uint256 stageTimestamp;
+        uint256 gateTimestamp;
+        uint256 settledTimestamp;
     }
 
     // Minimum stake required to create a Private campaign
     uint256 public minStake = 0.0025 ether;
     // Minimum stake required to create an Open Campaign
-    uint256 public minOpenStake = 0.025 ether;
+    uint256 public minOpenCampaignStake = 0.025 ether;
     // Minimum stake required to enroll in a Project
     uint256 public enrolStake = 0.0025 ether;
     /// END OF STRUCTS DECLARATIONS
@@ -227,6 +251,63 @@ contract StandardCampaign {
         _;
     }
 
+    // Project Statuses
+    modifier isProjectGenesisGate(uint256 _id) {
+        require(
+            projects[_id].status == ProjectStatus.GenesisGate,
+            "Project must be at genesis gate"
+        );
+        _;
+    }
+    modifier isProjectGate(uint256 _id) {
+        require(
+            projects[_id].status == ProjectStatus.Gate,
+            "Project must be at gate"
+        );
+        _;
+    }
+    modifier isProjectStage(uint256 _id) {
+        require(
+            projects[_id].status == ProjectStatus.Stage,
+            "Project must be at stage"
+        );
+        _;
+    }
+    modifier isProjectSettled(uint256 _id) {
+        require(
+            projects[_id].status == ProjectStatus.Settled,
+            "Project must be settled"
+        );
+        _;
+    }
+    modifier isProjectRunning(uint256 _id) {
+        require(
+            projects[_id].status != ProjectStatus.Closed,
+            "Project must be running"
+        );
+        if (
+            campaigns[projects[_id].parentCampaign].style ==
+            CampaignStyle.Private
+        ) {
+            require(
+                projects[_id].deadline >= block.timestamp,
+                "Private campaign projects must be before deadline to be running"
+            );
+        }
+        _;
+    }
+    modifier isProjectClosed(uint256 _id) {
+        require(
+            projects[_id].status == ProjectStatus.Closed,
+            "Project must be closed"
+        );
+        _;
+    }
+    modifier isApplicationExisting(uint256 _id) {
+        require(_id < applicationCount, "Application does not exist");
+        _;
+    }
+
     // Project Roles
     modifier isWorkerOnProject(uint256 _id) {
         bool isWorker = false;
@@ -250,9 +331,9 @@ contract StandardCampaign {
     }
 
     // Stake & Funding
-    modifier isFundingIntended(uint256 _funding) {
+    modifier isMoneyIntended(uint256 _money) {
         require(
-            msg.value == _funding && _funding > 0,
+            msg.value == _money && _money > 0,
             "Ether sent must be equal to intended funding"
         );
         _;
@@ -268,6 +349,13 @@ contract StandardCampaign {
         require(
             _stake >= minStake,
             "Intended stake must be greater or equal to minStake"
+        );
+        _;
+    }
+    modifier isMoreThanEnrolStake(uint256 _stake) {
+        require(
+            _stake >= enrolStake,
+            "Intended stake must be greater or equal to enrolStake"
         );
         _;
     }
@@ -344,7 +432,7 @@ contract StandardCampaign {
     function fundCampaign(
         uint256 _id,
         uint256 _funding
-    ) public payable isFundingIntended(_funding) {
+    ) public payable isMoneyIntended(_funding) {
         Fundings memory newFunding;
         newFunding.funder = payable(msg.sender);
         newFunding.funding = _funding;
@@ -407,9 +495,23 @@ contract StandardCampaign {
         isCampaignOwner(_id)
         isFutureTimestamp(_deadline)
     {
-        require(_owners.length > 0, "Campaign must have at least one owner");
+        require(
+            _owners.length > 0,
+            "Campaign must have at least one owner at all times"
+        );
         if (_status == CampaignStatus.Closed) {
-            require(false, "Projects must be closed"); //⚠️⚠️⚠️
+            // require that all projects inside are closed
+            for (
+                uint256 i = 0;
+                i < campaigns[_id].allChildProjects.length;
+                i++
+            ) {
+                require(
+                    projects[campaigns[_id].allChildProjects[i]].status ==
+                        ProjectStatus.Closed,
+                    "Projects must be closed"
+                );
+            }
         }
 
         Campaign storage campaign = campaigns[_id];
@@ -433,6 +535,7 @@ contract StandardCampaign {
         string memory _title,
         string memory _metadata,
         uint256 _deadline,
+        bool _applicationRequired,
         uint256 _parentCampaign,
         uint256 _parentProject
     )
@@ -446,8 +549,14 @@ contract StandardCampaign {
         project.title = _title;
         project.metadata = _metadata;
         project.creationTime = block.timestamp;
-        project.deadline = _deadline;
+        project.deadline = _deadline; // warning: deadline can't be earlier than latest task deadline + settling time
         project.status = ProjectStatus.GenesisGate;
+
+        if (campaigns[_parentCampaign].style == CampaignStyle.Open) {
+            project.applicationRequired = false;
+        } else {
+            project.applicationRequired = _applicationRequired;
+        }
 
         // Parent Campaign
         project.parentCampaign = _parentCampaign;
@@ -465,6 +574,147 @@ contract StandardCampaign {
 
         projectCount++;
         return projectCount - 1;
+    }
+
+    // Update project STATUS messy af fixfixfix ⚠️
+    function updateProjectStatus(
+        uint256 _id,
+        ProjectStatus _nextStatus
+    )
+        public
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        isCampaignOwner(projects[_id].parentCampaign)
+    {
+        require(
+            _nextStatus != ProjectStatus.GenesisGate,
+            "Projects cannot be reverted to genesis gate"
+        );
+
+        Project storage project = projects[_id];
+
+        if (_nextStatus == ProjectStatus.Stage) {
+            require(
+                project.status == ProjectStatus.GenesisGate ||
+                    project.status == ProjectStatus.Settled,
+                "Project must have settled previous stage"
+            );
+            if (project.status == ProjectStatus.GenesisGate) {
+                require(
+                    project.workers.length > 0,
+                    "Project must have workers"
+                );
+            }
+        } else if (_nextStatus == ProjectStatus.Settled) {
+            require(
+                project.status == ProjectStatus.Gate,
+                "Project must currently be at gate"
+            );
+        } else if (_nextStatus == ProjectStatus.Gate) {
+            require(
+                project.status == ProjectStatus.Stage,
+                "Project must currently be at stage"
+            );
+        } else if (_nextStatus == ProjectStatus.Closed) {
+            require(
+                project.status == ProjectStatus.Settled,
+                "Project must currently be settled"
+            );
+        }
+        project.status = _nextStatus;
+    }
+
+    // Apply to project ✅
+    function applyToProject(
+        uint256 _id,
+        string memory _metadata,
+        uint256 _stake
+    )
+        public
+        payable
+        isCampaignRunning(projects[_id].parentCampaign)
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isMoneyIntended(_stake)
+        isMoreThanEnrolStake(_stake)
+        returns (uint256)
+    {
+        Project storage project = projects[_id];
+        require(
+            project.applicationRequired,
+            "Project does not require applications"
+        );
+
+        Application storage application = applications[applicationCount];
+        application.metadata = _metadata;
+        application.applicant = msg.sender;
+        application.accepted = false;
+        application.enrolStake.funder = payable(msg.sender);
+        application.enrolStake.funding = _stake;
+        application.enrolStake.refunded = false;
+        application.parentProject = _id;
+
+        project.applications.push(applicationCount);
+        applicationCount++;
+        return applicationCount - 1;
+    }
+
+    // Application decision by acceptors ✅
+    function applicationDecision(
+        uint256 _applicationID,
+        bool _accepted
+    )
+        public
+        isProjectExisting(applications[_applicationID].parentProject)
+        isCampaignAcceptor(
+            projects[applications[_applicationID].parentProject].parentCampaign
+        )
+        isApplicationExisting(_applicationID)
+    {
+        Application storage application = applications[_applicationID];
+        Project storage project = projects[application.parentProject];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+        // if project or campaign is closed, decline or if project is past its deadline, decline
+        // also refund stake
+        if (
+            project.status == ProjectStatus.Closed ||
+            project.deadline < block.timestamp ||
+            campaigns[project.parentCampaign].status == CampaignStatus.Closed ||
+            !_accepted
+        ) {
+            applications[_applicationID].accepted = false;
+            applications[_applicationID].enrolStake.refunded = true;
+            deleteItemInUintArray(_applicationID, project.applications);
+            payable(msg.sender).transfer(
+                applications[_applicationID].enrolStake.funding
+            );
+            return;
+        } else if (_accepted) {
+            project.workers.push(application.applicant);
+            campaign.allTimeStakeholders.push(payable(application.applicant));
+            campaign.workers.push(payable(application.applicant));
+            application.accepted = true;
+            // deleteItemInUintArray(_applicationID, project.applications); maybe??
+        }
+    }
+
+    // Pattern for deleting stuff from stuff ✅
+    function deleteItemInUintArray(
+        uint256 _ItemID,
+        uint256[] storage _array
+    ) internal {
+        uint256 i = 0;
+        while (i < _array.length) {
+            if (_array[i] == _ItemID) {
+                _array[i] = _array[_array.length - 1];
+                _array.pop();
+                return;
+            }
+            i++;
+        }
+        // Throw an error if the item was not found.
+        revert("Item not found");
     }
 
     // ??? How can I resolve the single project/ single campaign issue ???
