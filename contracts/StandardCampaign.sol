@@ -21,7 +21,7 @@ contract StandardCampaign {
         address payable[] workers;
         address payable[] allTimeStakeholders;
         // Stake
-        uint256 stake;
+        Fundings stake;
         // Fundings (contains funders)
         Fundings[] fundings;
         // Child projects & All child projects (contains IDs)
@@ -44,7 +44,7 @@ contract StandardCampaign {
         uint256 deadline;
         NextMilestone nextMilestone;
         ProjectStatus status;
-        // Workers
+        // Workers & Applications
         bool applicationRequired;
         uint256[] applications;
         address[] workers;
@@ -121,10 +121,16 @@ contract StandardCampaign {
         Closed
     }
 
+    enum TaskStatusFilter {
+        Uncompleted,
+        Completed,
+        All
+    }
+
     struct NextMilestone {
-        uint256 stageTimestamp;
-        uint256 gateTimestamp;
-        uint256 settledTimestamp;
+        uint256 startStageTimestamp;
+        uint256 startGateTimestamp;
+        uint256 startSettledTimestamp;
     }
 
     // Minimum stake required to create a Private campaign
@@ -414,7 +420,9 @@ contract StandardCampaign {
             campaign.allTimeStakeholders.push((_acceptors[i]));
         }
         campaign.allTimeStakeholders.push(payable(msg.sender));
-        campaign.stake = _stake;
+        campaign.stake.funding = _stake;
+        campaign.stake.funder = payable(msg.sender);
+        campaign.stake.refunded = false;
 
         if (_funding > 0) {
             Fundings memory newFunding;
@@ -472,10 +480,10 @@ contract StandardCampaign {
         isCampaignCreator(_id)
     {
         Campaign storage campaign = campaigns[_id];
-        require(campaign.stake > 0, "The campaign does not have a stake");
+        require(!campaign.stake.refunded, "Stake already refunded");
 
-        uint256 stake = campaign.stake;
-        campaign.stake = 0;
+        uint256 stake = campaign.stake.funding;
+        campaign.stake.refunded = true;
         campaign.creator.transfer(stake);
     }
 
@@ -544,32 +552,41 @@ contract StandardCampaign {
         isCampaignExisting(_parentCampaign)
         returns (uint256)
     {
+        require(
+            _parentProject <= projectCount + 1,
+            "Parent project must exist or be the next top-level project to be created"
+        );
         Project storage project = projects[projectCount];
+        Campaign storage parentCampaign = campaigns[_parentCampaign];
 
+        // Populate project
         project.title = _title;
         project.metadata = _metadata;
         project.creationTime = block.timestamp;
         project.deadline = _deadline; // warning: deadline can't be earlier than latest task deadline + settling time
         project.status = ProjectStatus.GenesisGate;
 
-        if (campaigns[_parentCampaign].style == CampaignStyle.Open) {
+        // Open campaigns don't require applications
+        if (parentCampaign.style == CampaignStyle.Open) {
             project.applicationRequired = false;
         } else {
             project.applicationRequired = _applicationRequired;
         }
 
-        // Parent Campaign
+        // In THIS project being created, set the parent campaign and project
         project.parentCampaign = _parentCampaign;
-        project.parentProject = _parentProject; // references itself if at the top level
+        project.parentProject = _parentProject; // !!! references itself if at the top level
 
-        if (_parentProject != projectCount) {
+        // In the PARENTS of THIS project being created, add THIS project to the child projects
+        if (_parentProject < projectCount) {
             // If this is not the top level project, add it to the parent project
             projects[_parentProject].childProjects.push(projectCount);
         } else {
             // If this is a top level project, add it in the parent campaign
-            campaigns[_parentCampaign].directChildProjects.push(projectCount);
+            parentCampaign.directChildProjects.push(projectCount);
         }
 
+        // Reference project in campaign
         campaigns[_parentCampaign].allChildProjects.push(projectCount);
 
         projectCount++;
@@ -579,14 +596,16 @@ contract StandardCampaign {
     // Update project STATUS messy af fixfixfix ⚠️
     function updateProjectStatus(
         uint256 _id,
-        ProjectStatus _nextStatus
+        ProjectStatus _nextStatus,
+        uint256 _nextStageStartTimestamp,
+        uint256 _nextGateStartTimestamp
     )
         public
         isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
-        isCampaignOwner(projects[_id].parentCampaign)
     {
+        // GOING INTO GENESIS IS NOT POSSIBLE 🔹🔹🔹
         require(
             _nextStatus != ProjectStatus.GenesisGate,
             "Projects cannot be reverted to genesis gate"
@@ -594,35 +613,137 @@ contract StandardCampaign {
 
         Project storage project = projects[_id];
 
+        // GOING INTO STAGE 🔹🔹🔹
         if (_nextStatus == ProjectStatus.Stage) {
-            require(
-                project.status == ProjectStatus.GenesisGate ||
-                    project.status == ProjectStatus.Settled,
-                "Project must have settled previous stage"
-            );
-            if (project.status == ProjectStatus.GenesisGate) {
-                require(
-                    project.workers.length > 0,
-                    "Project must have workers"
-                );
+            require(toStageConditions(_id), "Project cannot go to stage");
+        }
+        // GOING INTO GATE 🔹🔹🔹
+        else if (_nextStatus == ProjectStatus.Gate) {
+            require(toGateConditions(_id), "Project cannot go to gate");
+        }
+        // GOING INTO SETTLED 🔹🔹🔹
+        else if (_nextStatus == ProjectStatus.Settled) {
+            bool isOwner = false;
+            for (uint256 i = 0; i < campaigns[_id].owners.length; i++) {
+                if (msg.sender == campaigns[_id].owners[i]) {
+                    isOwner = true;
+                    break;
+                }
             }
-        } else if (_nextStatus == ProjectStatus.Settled) {
+            require(isOwner, "Sender must be an owner of the campaign");
             require(
-                project.status == ProjectStatus.Gate,
-                "Project must currently be at gate"
+                project.status == ProjectStatus.Gate &&
+                    project.nextMilestone.startSettledTimestamp <
+                    block.timestamp,
+                "Project must currently be at gate and within settled timestamp"
             );
-        } else if (_nextStatus == ProjectStatus.Gate) {
             require(
-                project.status == ProjectStatus.Stage,
-                "Project must currently be at stage"
+                _nextStageStartTimestamp >= block.timestamp + 86400,
+                "_nextStageStartTimestamp must be at least 24 hours from now"
             );
-        } else if (_nextStatus == ProjectStatus.Closed) {
+
+            // Upcoming milestones based on input
+            NextMilestone memory _nextMilestone = NextMilestone(
+                _nextStageStartTimestamp = max(
+                    _nextStageStartTimestamp,
+                    block.timestamp + 1 days
+                ),
+                _nextGateStartTimestamp,
+                _nextGateStartTimestamp + 2 days // !!! hardcoded gate time before settling
+            );
+
+            project.nextMilestone = _nextMilestone;
+        }
+        // GOING INTO CLOSED 🔹🔹🔹
+        else if (_nextStatus == ProjectStatus.Closed) {
             require(
                 project.status == ProjectStatus.Settled,
                 "Project must currently be settled"
             );
         }
         project.status = _nextStatus;
+    }
+
+    // Conditions for going to Stage ✅
+    function toStageConditions(
+        uint256 _id
+    )
+        public
+        view
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        returns (bool)
+    {
+        Project storage project = projects[_id];
+        Task[] memory uncompletedTasks = getTasksOfProject(
+            _id,
+            TaskStatusFilter.Uncompleted
+        );
+
+        bool currentStatusValid = project.status == ProjectStatus.GenesisGate ||
+            project.status == ProjectStatus.Settled;
+        bool projectHasWorkers = project.workers.length > 0;
+        bool tasksHaveWorkers = false;
+        bool tasksHaveFutureDeadlines = true; // initialize to true
+
+        for (uint256 i = 0; i < uncompletedTasks.length; i++) {
+            if (
+                uncompletedTasks[i].deadline <= block.timestamp &&
+                uncompletedTasks[i].deadline >=
+                project.nextMilestone.startGateTimestamp
+            ) {
+                tasksHaveFutureDeadlines = false;
+                break;
+            }
+            if (uncompletedTasks[i].worker != address(0)) {
+                tasksHaveWorkers = true;
+            }
+        }
+
+        return
+            tasksHaveWorkers &&
+            tasksHaveFutureDeadlines &&
+            currentStatusValid &&
+            projectHasWorkers;
+    }
+
+    // Conditions for going to Gate ✅
+    function toGateConditions(
+        uint256 _id
+    )
+        public
+        view
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        returns (bool)
+    {
+        Project storage project = projects[_id];
+        bool currentStatusValid = project.status == ProjectStatus.Stage;
+        bool inGatePeriod = block.timestamp >=
+            project.nextMilestone.startGateTimestamp;
+
+        return currentStatusValid && inGatePeriod;
+    }
+
+    // Conditions for going to Settled ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️ <- NEXT TODO
+    function toSettledConditions(
+        uint256 _id
+    )
+        public
+        view
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        returns (bool)
+    {
+        Project storage project = projects[_id];
+        bool currentStatusValid = project.status == ProjectStatus.Gate;
+        bool inSettledPeriod = block.timestamp >=
+            project.nextMilestone.startSettledTimestamp;
+
+        return currentStatusValid && inSettledPeriod;
     }
 
     // Apply to project ✅
@@ -717,6 +838,78 @@ contract StandardCampaign {
         revert("Item not found");
     }
 
+    // Get tasks in a project ✅
+    function getTasksOfProject(
+        uint256 _id,
+        TaskStatusFilter _statusFilter
+    ) public view returns (Task[] memory) {
+        Project memory parentProject = projects[_id];
+        if (_statusFilter == TaskStatusFilter.Uncompleted) {
+            // Get uncompleted tasks
+            Task[] memory _tasks = new Task[](
+                countTasksWithFilter(_id, _statusFilter)
+            );
+            uint256 j = 0;
+            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
+                if (!tasks[parentProject.childTasks[i]].completed) {
+                    _tasks[j] = tasks[parentProject.childTasks[i]];
+                    j++;
+                }
+            }
+            return _tasks;
+        } else if (_statusFilter == TaskStatusFilter.Completed) {
+            // Get completed tasks
+            Task[] memory _tasks = new Task[](
+                countTasksWithFilter(_id, _statusFilter)
+            );
+            uint256 j = 0;
+            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
+                if (tasks[parentProject.childTasks[i]].completed) {
+                    _tasks[j] = tasks[parentProject.childTasks[i]];
+                    j++;
+                }
+            }
+            return _tasks;
+        } else {
+            // Get all tasks
+            Task[] memory _tasks = new Task[](parentProject.childTasks.length);
+            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
+                _tasks[i] = tasks[parentProject.childTasks[i]];
+            }
+            return _tasks;
+        }
+    }
+
+    // How many tasks match filter? helper function ✅
+    function countTasksWithFilter(
+        uint256 _id,
+        TaskStatusFilter _statusFilter
+    ) private view returns (uint256) {
+        uint256 taskCounter = 0;
+        uint256[] memory childTasks = projects[_id].childTasks;
+        for (uint256 i = 0; i < childTasks.length; i++) {
+            if (
+                _statusFilter == TaskStatusFilter.Completed &&
+                tasks[childTasks[i]].completed
+            ) {
+                taskCounter++;
+            } else if (
+                _statusFilter == TaskStatusFilter.Uncompleted &&
+                !tasks[childTasks[i]].completed
+            ) {
+                taskCounter++;
+            } else if (_statusFilter == TaskStatusFilter.All) {
+                taskCounter++;
+            }
+        }
+        return taskCounter;
+    }
+
+    // Returns maximum of two numbers ✅
+    function max(uint a, uint b) private pure returns (uint) {
+        return a > b ? a : b;
+    }
+
     // ??? How can I resolve the single project/ single campaign issue ???
     /// END OF PROJECT WRITE FUNCTIONS
     /// ***
@@ -800,6 +993,12 @@ contract StandardCampaign {
         );
         payable(msg.sender).transfer(address(this).balance);
     }
+
+    function dispute(uint256 _id) public isCampaignStakeholder(_id) {
+        emit Dispute(_id);
+    }
+
+    event Dispute(uint256 _id);
 
     /// END OF DEVELOPER FUNCTIONS
     /// ***

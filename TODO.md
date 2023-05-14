@@ -1,6 +1,7 @@
 # **P1**
 
 [-] EVERYTHING must be settled at every gate
+[-] Remove worker function _>func_
 
 [-] Project status _!infra_
 [-] Locked funds entry in the campaign _!infra_
