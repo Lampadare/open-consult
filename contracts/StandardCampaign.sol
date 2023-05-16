@@ -42,7 +42,7 @@ contract StandardCampaign {
         // Timestamps
         uint256 creationTime;
         uint256 deadline;
-        bool[] fastForward;
+        Vote[] fastForward;
         NextMilestone nextMilestone;
         ProjectStatus status;
         // Workers & Applications
@@ -113,6 +113,11 @@ contract StandardCampaign {
         uint256 startStageTimestamp;
         uint256 startGateTimestamp;
         uint256 startSettledTimestamp;
+    }
+
+    struct Vote {
+        address voter;
+        bool vote;
     }
 
     enum CampaignStyle {
@@ -190,25 +195,17 @@ contract StandardCampaign {
         _;
     }
     modifier isCampaignOwner(uint256 _id) {
-        bool isOwner = false;
-        for (uint256 i = 0; i < campaigns[_id].owners.length; i++) {
-            if (msg.sender == campaigns[_id].owners[i]) {
-                isOwner = true;
-                break;
-            }
-        }
-        require(isOwner, "Sender must be an owner of the campaign");
+        require(
+            checkIsCampaignOwner(_id),
+            "Sender must be an owner of the campaign"
+        );
         _;
     }
     modifier isCampaignAcceptor(uint256 _id) {
-        bool isAcceptor = false;
-        for (uint256 i = 0; i < campaigns[_id].acceptors.length; i++) {
-            if (msg.sender == campaigns[_id].acceptors[i]) {
-                isAcceptor = true;
-                break;
-            }
-        }
-        require(isAcceptor, "Sender must be an acceptor of the campaign");
+        require(
+            checkIsCampaignAcceptor(_id),
+            "Sender must be an acceptor of the campaign"
+        );
         _;
     }
     modifier isCampaignWorker(uint256 _id) {
@@ -328,15 +325,8 @@ contract StandardCampaign {
     }
 
     // Project Roles
-    modifier isWorkerOnProject(uint256 _id) {
-        bool isWorker = false;
-        for (uint256 i = 0; i < projects[_id].workers.length; i++) {
-            if (msg.sender == projects[_id].workers[i]) {
-                isWorker = true;
-                break;
-            }
-        }
-        require(isWorker, "Sender must be a worker on the project");
+    modifier isProjectWorker(uint256 _id) {
+        require(checkIsProjectWorker, "Sender must be a worker on the project");
         _;
     }
 
@@ -796,79 +786,81 @@ contract StandardCampaign {
             currentStatusValid && inSettledPeriod && noTaskSubmissionsPending;
     }
 
-    // Updates fastForward array and if an owner and them all workers submit a true,
-    // fast forwards the project to next stage/gate/settled
-    // fix this so that the workers store their vote in the fastForward array
-    // and they can vote even if owner has not voted yet and once we reach all
-    // workers voting true + one owner voting true, we fast forward
-    function fastForwardStatus(uint256 _id, bool _vote) public {
+    // Updates project status if fastforward conditions are fulfilled ✅
+    function fastForwardStatus(uint256 _id) public {
         Project storage project = projects[_id];
         Campaign storage campaign = campaigns[project.parentCampaign];
-        //Check for owner
-        bool isOwner = false;
-        for (uint256 i = 0; i < campaign.owners.length; i++) {
-            if (msg.sender == campaign.owners[i]) {
-                isOwner = true;
-                break;
-            }
-        }
-        bool isWorker = false;
-        for (uint256 i = 0; i < project.workers.length; i++) {
-            if (msg.sender == project.workers[i]) {
-                isWorker = true;
-                break;
-            }
-        }
-        require(
-            _vote == true && (isWorker || isOwner),
-            "Vote must be true and by worker or owner"
-        );
-        // Owner needs to give greenlight
-        if (isOwner) {
-            // if owner, set first vote to true
-            if (project.fastForward.length == 0) {
-                project.fastForward.push(_vote);
+
+        // Check for each vote in the fastForward array, if at least 1 owner and all workers voted true, and conditions are fulfilled, move to next stage/gate/settled
+        uint256 ownerVotes = 0;
+        uint256 workerVotes = 0;
+        uint256 acceptorVotes = 0;
+
+        for (uint256 i = 0; i < project.fastForward.length; i++) {
+            if (
+                checkIsProjectWorker(project.fastForward[i].voter) &&
+                project.fastForward[i].vote
+            ) {
+                workerVotes++;
             } else {
-                project.fastForward[0] = _vote;
+                return;
             }
-        } else {
-            // if worker, set vote to true
-            project.fastForward.push(_vote);
+            if (
+                checkIsCampaignOwner(project.fastForward[i].voter) &&
+                project.fastForward[i].vote
+            ) {
+                ownerVotes++;
+            }
+            if (
+                checkIsCampaignAcceptor(project.fastForward[i].voter) &&
+                project.fastForward[i].vote
+            ) {
+                acceptorVotes++;
+            }
         }
-        // Check for worker votes
-        bool allWorkersVotedTrue = true;
-        for (uint256 i = 0; i < project.workers.length; i++) {
-            if (project.fastForward[i + 1] == false) {
-                allWorkersVotedTrue = false;
+
+        if (
+            ownerVotes > 0 &&
+            acceptorVotes > 0 &&
+            project.workers.length == workerVotes
+        ) {
+            if (toStageConditions(_id)) {
+                updateProjectStatus(_id, ProjectStatus.Stage, 0, 0);
+                //reset fastForward array
+                delete project.fastForward;
+            } else if (toGateConditions(_id)) {
+                updateProjectStatus(_id, ProjectStatus.Gate, 0, 0);
+                //reset fastForward array
+                delete project.fastForward;
+            }
+        }
+    }
+
+    // If sender is owner, acceptor or worker, append vote to fast forward status ✅
+    function voteFastForwardStatus(uint256 _id, bool _vote) public {
+        require(
+            checkIsCampaignAcceptor(campaigns[projects[_id].parentCampaign]) ||
+                checkIsCampaignOwner(campaigns[projects[_id].parentCampaign]) ||
+                checkIsProjectWorker(_id),
+            "Sender must be an acceptor, worker or owner"
+        );
+        Project storage project = projects[_id];
+
+        bool voterFound = false;
+
+        for (uint256 i = 0; i < project.fastForward.length; i++) {
+            if (project.fastForward[i].voter == msg.sender) {
+                project.fastForward[i].vote = _vote;
+                voterFound = true;
                 break;
             }
         }
-        // If all workers have voted true, fastforward, if not don't
-        if (allWorkersVotedTrue) {
-            // Fast forward
-            if (project.status == ProjectStatus.Stage) {
-                updateProjectStatus(
-                    _id,
-                    ProjectStatus.Gate,
-                    project.nextMilestone.startStageTimestamp,
-                    project.nextMilestone.startGateTimestamp
-                );
-            } else if (project.status == ProjectStatus.Gate) {
-                updateProjectStatus(
-                    _id,
-                    ProjectStatus.Settled,
-                    project.nextMilestone.startStageTimestamp,
-                    project.nextMilestone.startGateTimestamp
-                );
-            } else if (project.status == ProjectStatus.Settled) {
-                updateProjectStatus(
-                    _id,
-                    ProjectStatus.Closed,
-                    project.nextMilestone.startStageTimestamp,
-                    project.nextMilestone.startGateTimestamp
-                );
-            }
+
+        if (!voterFound) {
+            project.fastForward.push(Vote(msg.sender, _vote));
         }
+
+        fastForwardStatus(_id);
     }
 
     // Apply to project ✅
@@ -1033,6 +1025,82 @@ contract StandardCampaign {
     // Returns maximum of two numbers ✅
     function max(uint a, uint b) private pure returns (uint) {
         return a > b ? a : b;
+    }
+
+    // Some checks with overloading for addresses ✅
+    function checkIsCampaignOwner(uint256 _id) public view returns (bool) {
+        bool isOwner = false;
+        for (uint256 i = 0; i < campaigns[_id].owners.length; i++) {
+            if (msg.sender == campaigns[_id].owners[i]) {
+                isOwner = true;
+                break;
+            }
+        }
+        return isOwner;
+    }
+
+    function checkIsCampaignOwner(
+        uint256 _id,
+        address _address
+    ) public view returns (bool) {
+        bool isOwner = false;
+        for (uint256 i = 0; i < campaigns[_id].owners.length; i++) {
+            if (_address == campaigns[_id].owners[i]) {
+                isOwner = true;
+                break;
+            }
+        }
+        return isOwner;
+    }
+
+    function checkIsCampaignAcceptor(uint256 _id) public view returns (bool) {
+        bool isAcceptor = false;
+        for (uint256 i = 0; i < campaigns[_id].acceptors.length; i++) {
+            if (msg.sender == campaigns[_id].acceptors[i]) {
+                isAcceptor = true;
+                break;
+            }
+        }
+        return isAcceptor;
+    }
+
+    function checkIsCampaignAcceptor(
+        uint256 _id,
+        address _address
+    ) public view returns (bool) {
+        bool isAcceptor = false;
+        for (uint256 i = 0; i < campaigns[_id].acceptors.length; i++) {
+            if (_address == campaigns[_id].acceptors[i]) {
+                isAcceptor = true;
+                break;
+            }
+        }
+        return isAcceptor;
+    }
+
+    function checkIsProjectWorker(uint256 _id) public view returns (bool) {
+        bool isWorker = false;
+        for (uint256 i = 0; i < projects[_id].workers.length; i++) {
+            if (msg.sender == projects[_id].workers[i]) {
+                isWorker = true;
+                break;
+            }
+        }
+        return isWorker;
+    }
+
+    function checkIsProjectWorker(
+        uint256 _id,
+        address _address
+    ) public view returns (bool) {
+        bool isWorker = false;
+        for (uint256 i = 0; i < projects[_id].workers.length; i++) {
+            if (_address == projects[_id].workers[i]) {
+                isWorker = true;
+                break;
+            }
+        }
+        return isWorker;
     }
 
     // ??? How can I resolve the single project/ single campaign issue ???

@@ -57,3 +57,4 @@
 [X] UpdateCampaign single function (default values will be placed in front-end)
 [x] project nesting _!infra_
 [x] Application requirement _!infra_
+[x] should add project.greenlight bool variable for state of wether the workers are happy to go through with the next phase -> speedup
