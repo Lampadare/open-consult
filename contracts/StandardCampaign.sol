@@ -24,6 +24,7 @@ contract StandardCampaign {
         Fundings stake;
         // Fundings (contains funders)
         Fundings[] fundings;
+        uint256 lockedRewards;
         // Child projects & All child projects (contains IDs)
         uint256[] directChildProjects;
         uint256[] allChildProjects;
@@ -68,6 +69,8 @@ contract StandardCampaign {
         string metadata;
         // Contribution weight
         uint256 weight;
+        uint256 reward;
+        bool paid;
         // Timestamps
         uint256 creationTime;
         uint256 deadline;
@@ -146,6 +149,7 @@ contract StandardCampaign {
     }
 
     enum SubmissionStatus {
+        None,
         Pending,
         Accepted,
         Rejected
@@ -157,6 +161,13 @@ contract StandardCampaign {
     uint256 public minOpenCampaignStake = 0.025 ether;
     // Minimum stake required to enroll in a Project
     uint256 public enrolStake = 0.0025 ether;
+
+    // Minimum time to settle a project
+    uint256 public minimumSettledTime = 1 days;
+    // Minimum time to gate a project
+    uint256 public minimumGateTime = 2 days;
+    // Within gate, maximum time to decide on submissions
+    uint256 public taskDecisionTime = 1 days;
     /// END OF STRUCTS DECLARATIONS
     /// ***
 
@@ -326,7 +337,10 @@ contract StandardCampaign {
 
     // Project Roles
     modifier isProjectWorker(uint256 _id) {
-        require(checkIsProjectWorker, "Sender must be a worker on the project");
+        require(
+            checkIsProjectWorker(_id),
+            "Sender must be a worker on the project"
+        );
         _;
     }
 
@@ -601,7 +615,8 @@ contract StandardCampaign {
         uint256 _id,
         ProjectStatus _nextStatus,
         uint256 _nextStageStartTimestamp,
-        uint256 _nextGateStartTimestamp
+        uint256 _nextGateStartTimestamp,
+        uint256 _nextSettledStartTimestamp
     )
         public
         isProjectExisting(_id)
@@ -616,39 +631,32 @@ contract StandardCampaign {
 
         Project storage project = projects[_id];
 
-        // GOING INTO STAGE 🔹🔹🔹
+        // GOING INTO STAGE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
         if (_nextStatus == ProjectStatus.Stage) {
             require(toStageConditions(_id), "Project cannot go to stage");
 
             // LOCK FUNDS HERE ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
         }
-        // GOING INTO GATE 🔹🔹🔹
+        // GOING INTO GATE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
         else if (_nextStatus == ProjectStatus.Gate) {
             require(toGateConditions(_id), "Project cannot go to gate");
         }
-        // GOING INTO SETTLED 🔹🔹🔹
+        // GOING INTO SETTLED 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
         else if (_nextStatus == ProjectStatus.Settled) {
-            bool isOwner = false;
-            for (uint256 i = 0; i < campaigns[_id].owners.length; i++) {
-                if (msg.sender == campaigns[_id].owners[i]) {
-                    isOwner = true;
-                    break;
-                }
-            }
-            require(isOwner, "Sender must be an owner of the campaign");
             require(
-                _nextStageStartTimestamp >= block.timestamp + 86400,
-                "_nextStageStartTimestamp must be at least 24 hours from now"
+                checkIsCampaignOwner(project.parentCampaign),
+                "Sender must be an owner of the campaign"
             );
             require(
-                _nextGateStartTimestamp > _nextStageStartTimestamp,
+                _nextSettledStartTimestamp > _nextGateStartTimestamp &&
+                    _nextGateStartTimestamp > _nextStageStartTimestamp,
                 "_nextGateStartTimestamp must be after _nextStageStartTimestamp"
             );
 
-            // Automatic accepted if submissions are not
-            //      decided on after beginning of settled time
-            // UNLOCK FUNDS HERE and send to workers
+            // Pay submissions with no decisions
+            payLateUndecidedSubmissions(_id);
 
+            // Get latest task deadline
             uint256 latestTaskDeadline = 0;
             for (uint256 i = 0; i < project.childTasks.length; i++) {
                 if (
@@ -658,19 +666,31 @@ contract StandardCampaign {
                 }
             }
 
-            // Upcoming milestones based on input
-            NextMilestone memory _nextMilestone = NextMilestone(
-                // timestamp of stage start must be at least 24 hours from now as grace period
-                max(_nextStageStartTimestamp, block.timestamp + 1 days),
-                // timestamp of gate start is after latest task deadline
-                latestTaskDeadline + 1 seconds,
-                // timestamp of settled start must be after latest task deadline + 2 day
-                latestTaskDeadline + 2 days
-            );
+            // If task deadline is before timestamp of stage start and uncompleted
+            // then update deadline of task
+            for (uint256 i = 0; i < project.childTasks.length; i++) {
+                if (
+                    tasks[project.childTasks[i]].deadline <
+                    max(_nextStageStartTimestamp, block.timestamp + 1 days) &&
+                    !tasks[project.childTasks[i]].completed
+                ) {
+                    tasks[project.childTasks[i]].deadline = max(
+                        _nextGateStartTimestamp - 1 seconds,
+                        latestTaskDeadline
+                    );
+                }
+            }
 
-            project.nextMilestone = _nextMilestone;
+            // Update project milestones
+            typicalProjectMilestonesUpdate(
+                _id,
+                _nextStageStartTimestamp,
+                _nextGateStartTimestamp,
+                _nextSettledStartTimestamp,
+                latestTaskDeadline
+            );
         }
-        // GOING INTO CLOSED 🔹🔹🔹
+        // GOING INTO CLOSED 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
         else if (_nextStatus == ProjectStatus.Closed) {
             require(
                 project.status == ProjectStatus.Settled,
@@ -691,10 +711,6 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
-        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
-        // IF WE HAVE GREENLIGHT BY STAKEHOLDERS, WE CAN GO TO STAGE DIRECTLY, BYPASSING TIMELINE
-        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
-
         Project storage project = projects[_id];
         Task[] memory uncompletedTasks = getTasksOfProject(
             _id,
@@ -706,6 +722,8 @@ contract StandardCampaign {
         bool projectHasWorkers = project.workers.length > 0;
         bool tasksHaveWorkers = false;
         bool tasksHaveFutureDeadlines = true; // initialize to true
+        bool inStagePeriod = block.timestamp >=
+            project.nextMilestone.startStageTimestamp;
 
         for (uint256 i = 0; i < uncompletedTasks.length; i++) {
             if (
@@ -725,7 +743,8 @@ contract StandardCampaign {
             tasksHaveWorkers &&
             tasksHaveFutureDeadlines &&
             currentStatusValid &&
-            projectHasWorkers;
+            projectHasWorkers &&
+            inStagePeriod;
     }
 
     // Conditions for going to Gate 🔴🔴🔴
@@ -739,10 +758,6 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
-        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
-        // IF WE HAVE EVERYTHING SUBMITTED, WE CAN GO TO STAGE DIRECTLY, BYPASSING TIMELINE
-        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
-
         Project storage project = projects[_id];
         bool currentStatusValid = project.status == ProjectStatus.Stage;
         bool inGatePeriod = block.timestamp >=
@@ -762,43 +777,84 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
-        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
-        // IF WE HAVE CHECKED ALL SUBMISSIONS, WE CAN GO TO SETTLED DIRECTLY, BYPASSING TIMELINE
-        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
-
         Project storage project = projects[_id];
 
         bool currentStatusValid = project.status == ProjectStatus.Gate;
         bool inSettledPeriod = block.timestamp >=
             project.nextMilestone.startSettledTimestamp;
-        bool noTaskSubmissionsPending = true;
-        // do all tasks have their submissions checked?
+
+        return currentStatusValid && inSettledPeriod;
+    }
+
+    // Update project milestones ✅
+    function typicalProjectMilestonesUpdate(
+        uint256 _id,
+        uint256 _nextStageStartTimestamp,
+        uint256 _nextGateStartTimestamp,
+        uint256 _nextSettledStartTimestamp,
+        uint256 latestTaskDeadline
+    ) private {
+        Project storage project = projects[_id];
+
+        // Upcoming milestones based on input
+        NextMilestone memory _nextMilestone = NextMilestone(
+            // timestamp of stage start must be at least 24 hours from now as grace period
+            max(_nextStageStartTimestamp, block.timestamp + minimumSettledTime),
+            // timestamp of gate start is at least after latest task deadline
+            max(_nextGateStartTimestamp, latestTaskDeadline + 1 seconds),
+            // timestamp of settled start must be after latest task deadline + 2 day
+            max(
+                _nextSettledStartTimestamp,
+                max(_nextGateStartTimestamp, latestTaskDeadline + 1 seconds) +
+                    minimumGateTime
+            )
+        );
+
+        project.nextMilestone = _nextMilestone;
+    }
+
+    // Automatically accept decisions which have received a submission and are past the decision time ✅
+    function payLateUndecidedSubmissions(uint256 _id) public {
+        Project storage project = projects[_id];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+
+        require(
+            block.timestamp >=
+                project.nextMilestone.startGateTimestamp + taskDecisionTime,
+            "Past end of max submission decision time, anyone can release funds of tasks missing decisions."
+        );
+
         for (uint256 i = 0; i < project.childTasks.length; i++) {
             if (
                 tasks[project.childTasks[i]].submission.status ==
                 SubmissionStatus.Pending
             ) {
-                noTaskSubmissionsPending = false;
+                tasks[project.childTasks[i]].submission.status ==
+                    SubmissionStatus.Accepted;
+                tasks[project.childTasks[i]].completed == true;
+                tasks[project.childTasks[i]].paid == true;
+                tasks[project.childTasks[i]].worker.transfer(
+                    tasks[project.childTasks[i]].reward
+                );
+                campaign.lockedRewards -= tasks[project.childTasks[i]].reward;
             }
         }
-
-        return
-            currentStatusValid && inSettledPeriod && noTaskSubmissionsPending;
     }
 
     // Updates project status if fastforward conditions are fulfilled ✅
     function fastForwardStatus(uint256 _id) public {
         Project storage project = projects[_id];
-        Campaign storage campaign = campaigns[project.parentCampaign];
 
-        // Check for each vote in the fastForward array, if at least 1 owner and all workers voted true, and conditions are fulfilled, move to next stage/gate/settled
+        // Check for each vote in the fastForward array, if at least 1 owner
+        // and all workers voted true, and conditions are fulfilled,
+        // then move to next stage/gate/settled
         uint256 ownerVotes = 0;
         uint256 workerVotes = 0;
         uint256 acceptorVotes = 0;
 
         for (uint256 i = 0; i < project.fastForward.length; i++) {
             if (
-                checkIsProjectWorker(project.fastForward[i].voter) &&
+                checkIsProjectWorker(_id, project.fastForward[i].voter) &&
                 project.fastForward[i].vote
             ) {
                 workerVotes++;
@@ -806,13 +862,13 @@ contract StandardCampaign {
                 return;
             }
             if (
-                checkIsCampaignOwner(project.fastForward[i].voter) &&
+                checkIsCampaignOwner(_id, project.fastForward[i].voter) &&
                 project.fastForward[i].vote
             ) {
                 ownerVotes++;
             }
             if (
-                checkIsCampaignAcceptor(project.fastForward[i].voter) &&
+                checkIsCampaignAcceptor(_id, project.fastForward[i].voter) &&
                 project.fastForward[i].vote
             ) {
                 acceptorVotes++;
@@ -825,11 +881,11 @@ contract StandardCampaign {
             project.workers.length == workerVotes
         ) {
             if (toStageConditions(_id)) {
-                updateProjectStatus(_id, ProjectStatus.Stage, 0, 0);
+                updateProjectStatus(_id, ProjectStatus.Stage, 0, 0, 0);
                 //reset fastForward array
                 delete project.fastForward;
             } else if (toGateConditions(_id)) {
-                updateProjectStatus(_id, ProjectStatus.Gate, 0, 0);
+                updateProjectStatus(_id, ProjectStatus.Gate, 0, 0, 0);
                 //reset fastForward array
                 delete project.fastForward;
             }
@@ -839,8 +895,8 @@ contract StandardCampaign {
     // If sender is owner, acceptor or worker, append vote to fast forward status ✅
     function voteFastForwardStatus(uint256 _id, bool _vote) public {
         require(
-            checkIsCampaignAcceptor(campaigns[projects[_id].parentCampaign]) ||
-                checkIsCampaignOwner(campaigns[projects[_id].parentCampaign]) ||
+            checkIsCampaignAcceptor(projects[_id].parentCampaign) ||
+                checkIsCampaignOwner(projects[_id].parentCampaign) ||
                 checkIsProjectWorker(_id),
             "Sender must be an acceptor, worker or owner"
         );
@@ -1027,7 +1083,7 @@ contract StandardCampaign {
         return a > b ? a : b;
     }
 
-    // Some checks with overloading for addresses ✅
+    // Check if sender is owner of campaign ✅
     function checkIsCampaignOwner(uint256 _id) public view returns (bool) {
         bool isOwner = false;
         for (uint256 i = 0; i < campaigns[_id].owners.length; i++) {
@@ -1039,6 +1095,7 @@ contract StandardCampaign {
         return isOwner;
     }
 
+    // Overloading: Check if address is owner of campaign ✅
     function checkIsCampaignOwner(
         uint256 _id,
         address _address
@@ -1053,6 +1110,7 @@ contract StandardCampaign {
         return isOwner;
     }
 
+    // Check if sender is acceptor of campaign ✅
     function checkIsCampaignAcceptor(uint256 _id) public view returns (bool) {
         bool isAcceptor = false;
         for (uint256 i = 0; i < campaigns[_id].acceptors.length; i++) {
@@ -1064,6 +1122,7 @@ contract StandardCampaign {
         return isAcceptor;
     }
 
+    // Overloading: Check if address is acceptor of campaign ✅
     function checkIsCampaignAcceptor(
         uint256 _id,
         address _address
@@ -1078,6 +1137,7 @@ contract StandardCampaign {
         return isAcceptor;
     }
 
+    // Check if sender is worker of project ✅
     function checkIsProjectWorker(uint256 _id) public view returns (bool) {
         bool isWorker = false;
         for (uint256 i = 0; i < projects[_id].workers.length; i++) {
@@ -1089,6 +1149,7 @@ contract StandardCampaign {
         return isWorker;
     }
 
+    // Overloading: Check if address is worker of project ✅
     function checkIsProjectWorker(
         uint256 _id,
         address _address

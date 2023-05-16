@@ -1,3 +1,5 @@
 - automatic accepted if submissions are not decided on after beginning of settled period
 - send funds to workers when going settled
 - if we are past the window of a certain phase but still havent gone to the next phase we should be able to push everything by however much time we are late
+- if owner doesn't move to settled, nothing can happen
+- solve the issue of what happens if we don't go to stage because we dont have any workers and that's the case for a long time
