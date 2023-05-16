@@ -10,6 +10,7 @@
 [-] Worker enrollment _!infra_
 [-] Task submission _!infra_
 
+[-] function to remove workers by Owner
 [-] Application acceptance _>func_
 [-] Project update _>func_
 [-] Project/Campaign Locked Funds _>func_
