@@ -42,6 +42,7 @@ contract StandardCampaign {
         // Timestamps
         uint256 creationTime;
         uint256 deadline;
+        bool[] fastForward;
         NextMilestone nextMilestone;
         ProjectStatus status;
         // Workers & Applications
@@ -73,6 +74,7 @@ contract StandardCampaign {
         // Worker
         address payable worker;
         // Completion
+        Submission submission;
         bool completed;
         // Parent Campaign & Project (contains IDs)
         uint256 parentProject;
@@ -96,10 +98,21 @@ contract StandardCampaign {
     mapping(uint256 => Application) public applications;
     uint256 public applicationCount = 0;
 
+    struct Submission {
+        string metadata;
+        SubmissionStatus status;
+    }
+
     struct Fundings {
         address payable funder; // The address of the individual who contributed
         uint256 funding; // The amount of tokens the user contributed
         bool refunded; // A boolean storing whether or not the contribution has been refunded yet
+    }
+
+    struct NextMilestone {
+        uint256 startStageTimestamp;
+        uint256 startGateTimestamp;
+        uint256 startSettledTimestamp;
     }
 
     enum CampaignStyle {
@@ -127,10 +140,10 @@ contract StandardCampaign {
         All
     }
 
-    struct NextMilestone {
-        uint256 startStageTimestamp;
-        uint256 startGateTimestamp;
-        uint256 startSettledTimestamp;
+    enum SubmissionStatus {
+        Pending,
+        Accepted,
+        Rejected
     }
 
     // Minimum stake required to create a Private campaign
@@ -563,7 +576,7 @@ contract StandardCampaign {
         project.title = _title;
         project.metadata = _metadata;
         project.creationTime = block.timestamp;
-        project.deadline = _deadline; // warning: deadline can't be earlier than latest task deadline + settling time
+        project.deadline = _deadline; // ⚠️ warning: deadline can't be earlier than latest task deadline + settling time
         project.status = ProjectStatus.GenesisGate;
 
         // Open campaigns don't require applications
@@ -616,6 +629,8 @@ contract StandardCampaign {
         // GOING INTO STAGE 🔹🔹🔹
         if (_nextStatus == ProjectStatus.Stage) {
             require(toStageConditions(_id), "Project cannot go to stage");
+
+            // LOCK FUNDS HERE ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
         }
         // GOING INTO GATE 🔹🔹🔹
         else if (_nextStatus == ProjectStatus.Gate) {
@@ -632,24 +647,35 @@ contract StandardCampaign {
             }
             require(isOwner, "Sender must be an owner of the campaign");
             require(
-                project.status == ProjectStatus.Gate &&
-                    project.nextMilestone.startSettledTimestamp <
-                    block.timestamp,
-                "Project must currently be at gate and within settled timestamp"
-            );
-            require(
                 _nextStageStartTimestamp >= block.timestamp + 86400,
                 "_nextStageStartTimestamp must be at least 24 hours from now"
             );
+            require(
+                _nextGateStartTimestamp > _nextStageStartTimestamp,
+                "_nextGateStartTimestamp must be after _nextStageStartTimestamp"
+            );
+
+            // Automatic accepted if submissions are not
+            //      decided on after beginning of settled time
+            // UNLOCK FUNDS HERE and send to workers
+
+            uint256 latestTaskDeadline = 0;
+            for (uint256 i = 0; i < project.childTasks.length; i++) {
+                if (
+                    tasks[project.childTasks[i]].deadline > latestTaskDeadline
+                ) {
+                    latestTaskDeadline = tasks[project.childTasks[i]].deadline;
+                }
+            }
 
             // Upcoming milestones based on input
             NextMilestone memory _nextMilestone = NextMilestone(
-                _nextStageStartTimestamp = max(
-                    _nextStageStartTimestamp,
-                    block.timestamp + 1 days
-                ),
-                _nextGateStartTimestamp,
-                _nextGateStartTimestamp + 2 days // !!! hardcoded gate time before settling
+                // timestamp of stage start must be at least 24 hours from now as grace period
+                max(_nextStageStartTimestamp, block.timestamp + 1 days),
+                // timestamp of gate start is after latest task deadline
+                latestTaskDeadline + 1 seconds,
+                // timestamp of settled start must be after latest task deadline + 2 day
+                latestTaskDeadline + 2 days
             );
 
             project.nextMilestone = _nextMilestone;
@@ -664,7 +690,7 @@ contract StandardCampaign {
         project.status = _nextStatus;
     }
 
-    // Conditions for going to Stage ✅
+    // Conditions for going to Stage 🔴🔴🔴
     function toStageConditions(
         uint256 _id
     )
@@ -675,6 +701,10 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
+        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+        // IF WE HAVE GREENLIGHT BY STAKEHOLDERS, WE CAN GO TO STAGE DIRECTLY, BYPASSING TIMELINE
+        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+
         Project storage project = projects[_id];
         Task[] memory uncompletedTasks = getTasksOfProject(
             _id,
@@ -708,7 +738,7 @@ contract StandardCampaign {
             projectHasWorkers;
     }
 
-    // Conditions for going to Gate ✅
+    // Conditions for going to Gate 🔴🔴🔴
     function toGateConditions(
         uint256 _id
     )
@@ -719,6 +749,10 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
+        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+        // IF WE HAVE EVERYTHING SUBMITTED, WE CAN GO TO STAGE DIRECTLY, BYPASSING TIMELINE
+        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+
         Project storage project = projects[_id];
         bool currentStatusValid = project.status == ProjectStatus.Stage;
         bool inGatePeriod = block.timestamp >=
@@ -727,7 +761,7 @@ contract StandardCampaign {
         return currentStatusValid && inGatePeriod;
     }
 
-    // Conditions for going to Settled ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️ <- NEXT TODO
+    // Conditions for going to Settled 🔴🔴🔴
     function toSettledConditions(
         uint256 _id
     )
@@ -738,12 +772,103 @@ contract StandardCampaign {
         isCampaignRunning(projects[_id].parentCampaign)
         returns (bool)
     {
+        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+        // IF WE HAVE CHECKED ALL SUBMISSIONS, WE CAN GO TO SETTLED DIRECTLY, BYPASSING TIMELINE
+        // ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+
         Project storage project = projects[_id];
+
         bool currentStatusValid = project.status == ProjectStatus.Gate;
         bool inSettledPeriod = block.timestamp >=
             project.nextMilestone.startSettledTimestamp;
+        bool noTaskSubmissionsPending = true;
+        // do all tasks have their submissions checked?
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            if (
+                tasks[project.childTasks[i]].submission.status ==
+                SubmissionStatus.Pending
+            ) {
+                noTaskSubmissionsPending = false;
+            }
+        }
 
-        return currentStatusValid && inSettledPeriod;
+        return
+            currentStatusValid && inSettledPeriod && noTaskSubmissionsPending;
+    }
+
+    // Updates fastForward array and if an owner and them all workers submit a true,
+    // fast forwards the project to next stage/gate/settled
+    // fix this so that the workers store their vote in the fastForward array
+    // and they can vote even if owner has not voted yet and once we reach all
+    // workers voting true + one owner voting true, we fast forward
+    function fastForwardStatus(uint256 _id, bool _vote) public {
+        Project storage project = projects[_id];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+        //Check for owner
+        bool isOwner = false;
+        for (uint256 i = 0; i < campaign.owners.length; i++) {
+            if (msg.sender == campaign.owners[i]) {
+                isOwner = true;
+                break;
+            }
+        }
+        bool isWorker = false;
+        for (uint256 i = 0; i < project.workers.length; i++) {
+            if (msg.sender == project.workers[i]) {
+                isWorker = true;
+                break;
+            }
+        }
+        require(
+            _vote == true && (isWorker || isOwner),
+            "Vote must be true and by worker or owner"
+        );
+        // Owner needs to give greenlight
+        if (isOwner) {
+            // if owner, set first vote to true
+            if (project.fastForward.length == 0) {
+                project.fastForward.push(_vote);
+            } else {
+                project.fastForward[0] = _vote;
+            }
+        } else {
+            // if worker, set vote to true
+            project.fastForward.push(_vote);
+        }
+        // Check for worker votes
+        bool allWorkersVotedTrue = true;
+        for (uint256 i = 0; i < project.workers.length; i++) {
+            if (project.fastForward[i + 1] == false) {
+                allWorkersVotedTrue = false;
+                break;
+            }
+        }
+        // If all workers have voted true, fastforward, if not don't
+        if (allWorkersVotedTrue) {
+            // Fast forward
+            if (project.status == ProjectStatus.Stage) {
+                updateProjectStatus(
+                    _id,
+                    ProjectStatus.Gate,
+                    project.nextMilestone.startStageTimestamp,
+                    project.nextMilestone.startGateTimestamp
+                );
+            } else if (project.status == ProjectStatus.Gate) {
+                updateProjectStatus(
+                    _id,
+                    ProjectStatus.Settled,
+                    project.nextMilestone.startStageTimestamp,
+                    project.nextMilestone.startGateTimestamp
+                );
+            } else if (project.status == ProjectStatus.Settled) {
+                updateProjectStatus(
+                    _id,
+                    ProjectStatus.Closed,
+                    project.nextMilestone.startStageTimestamp,
+                    project.nextMilestone.startGateTimestamp
+                );
+            }
+        }
     }
 
     // Apply to project ✅
