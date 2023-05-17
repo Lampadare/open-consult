@@ -11,6 +11,7 @@
 [-] Task submission _!infra_
 
 [-] function to remove workers by Owner
+[-] refund worker stake when they leave, only doable in gate or closed _>func_
 [-] Application acceptance _>func_
 [-] Project update _>func_
 [-] Project/Campaign Locked Funds _>func_
@@ -58,3 +59,6 @@
 [x] project nesting _!infra_
 [x] Application requirement _!infra_
 [x] should add project.greenlight bool variable for state of wether the workers are happy to go through with the next phase -> speedup
+[x] automatic accepted if submissions are not decided on after beginning of settled period
+[x] send funds to workers when going settled
+[x] if owner doesn't move to settled, nothing can happen

@@ -78,7 +78,7 @@ contract StandardCampaign {
         address payable worker;
         // Completion
         Submission submission;
-        bool completed;
+        bool closed;
         // Parent Campaign & Project (contains IDs)
         uint256 parentProject;
     }
@@ -135,7 +135,6 @@ contract StandardCampaign {
     }
 
     enum ProjectStatus {
-        GenesisGate,
         Stage,
         Gate,
         Settled,
@@ -143,8 +142,8 @@ contract StandardCampaign {
     }
 
     enum TaskStatusFilter {
-        Uncompleted,
-        Completed,
+        NotClosed,
+        Closed,
         All
     }
 
@@ -581,7 +580,7 @@ contract StandardCampaign {
         project.metadata = _metadata;
         project.creationTime = block.timestamp;
         project.deadline = _deadline; // ⚠️ warning: deadline can't be earlier than latest task deadline + settling time
-        project.status = ProjectStatus.GenesisGate;
+        project.status = ProjectStatus.Settled;
 
         // Open campaigns don't require applications
         if (parentCampaign.style == CampaignStyle.Open) {
@@ -610,97 +609,205 @@ contract StandardCampaign {
         return projectCount - 1;
     }
 
-    // Update project STATUS messy af fixfixfix ⚠️
-    function updateProjectStatus(
-        uint256 _id,
-        ProjectStatus _nextStatus,
+    // Close project ✅
+    function closeProject(
+        uint256 _id
+    )
+        public
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        isCampaignOwner(projects[_id].parentCampaign)
+    {
+        Project storage project = projects[_id];
+        require(
+            project.status == ProjectStatus.Gate,
+            "Project must currently be at gate"
+        );
+        require(
+            checkIsCampaignOwner(project.parentCampaign),
+            "Sender must be an owner of the campaign"
+        );
+        updateProjectStatus(_id, 0, 1, 2);
+
+        project.status = ProjectStatus.Closed;
+    }
+
+    // Go to settled ✅
+    function goToSettledStatus(
+        uint _id,
         uint256 _nextStageStartTimestamp,
         uint256 _nextGateStartTimestamp,
         uint256 _nextSettledStartTimestamp
     )
         public
         isProjectExisting(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        isProjectRunning(_id)
+        isProjectGate(_id)
+    {
+        Project storage project = projects[_id];
+        // Ensure sender is an owner of the campaign
+        require(
+            checkIsCampaignOwner(project.parentCampaign),
+            "Sender must be an owner of the campaign"
+        );
+        // Ensure timestamps are in order
+        require(
+            _nextSettledStartTimestamp > _nextGateStartTimestamp &&
+                _nextGateStartTimestamp > _nextStageStartTimestamp,
+            "_nextGateStartTimestamp must be after _nextStageStartTimestamp"
+        );
+
+        // Pay submissions with no decisions
+        payLateUndecidedSubmissions(_id);
+
+        // Get NotClosed tasks
+        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+            _id,
+            TaskStatusFilter.NotClosed
+        );
+
+        // Get latest task deadline
+        uint256 latestTaskDeadline = 0;
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            if (notClosedTasks[i].deadline > latestTaskDeadline) {
+                latestTaskDeadline = notClosedTasks[i].deadline;
+            }
+        }
+
+        // Update project milestones
+        typicalProjectMilestonesUpdate(
+            _id,
+            _nextStageStartTimestamp,
+            _nextGateStartTimestamp,
+            _nextSettledStartTimestamp,
+            latestTaskDeadline
+        );
+
+        // If task deadline is before timestamp of stage start and uncompleted
+        // then update deadline of task to be max of stage start and latest task deadline
+        // At this point, all deadlines should be between stage start and gate start
+        for (uint256 i = 0; i < notClosedTasks.length; i++) {
+            if (
+                notClosedTasks[i].deadline <
+                project.nextMilestone.startStageTimestamp
+            ) {
+                notClosedTasks[i].deadline = max(
+                    project.nextMilestone.startGateTimestamp - 1 seconds,
+                    latestTaskDeadline
+                );
+            }
+        }
+    }
+
+    // Update project STATUS ✅
+    function updateProjectStatus(
+        uint256 _id
+    )
+        public
+        isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
     {
-        // GOING INTO GENESIS IS NOT POSSIBLE 🔹🔹🔹
-        require(
-            _nextStatus != ProjectStatus.GenesisGate,
-            "Projects cannot be reverted to genesis gate"
-        );
-
         Project storage project = projects[_id];
 
         // GOING INTO STAGE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-        if (_nextStatus == ProjectStatus.Stage) {
+        if (project.status == ProjectStatus.Settled) {
             require(toStageConditions(_id), "Project cannot go to stage");
+            uint256 lateness = 0;
+
+            if (block.timestamp > project.nextMilestone.startStageTimestamp) {
+                lateness =
+                    block.timestamp -
+                    project.nextMilestone.startStageTimestamp;
+            }
+
+            Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+                _id,
+                TaskStatusFilter.NotClosed
+            );
+
+            for (uint256 i = 0; i < notClosedTasks.length; i++) {
+                //
+                if (
+                    notClosedTasks[i].deadline >=
+                    project.nextMilestone.startGateTimestamp
+                ) {
+                    notClosedTasks[i].deadline += lateness; // add lateness to deadline
+                }
+            }
+
+            // add lateness to nextmilestone
+            project.nextMilestone.startGateTimestamp += lateness;
+            project.nextMilestone.startSettledTimestamp += lateness;
+
+            project.status = ProjectStatus.Stage;
 
             // LOCK FUNDS HERE ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
         }
         // GOING INTO GATE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-        else if (_nextStatus == ProjectStatus.Gate) {
+        else if (project.status == ProjectStatus.Stage) {
             require(toGateConditions(_id), "Project cannot go to gate");
+
+            project.status = ProjectStatus.Gate;
         }
-        // GOING INTO SETTLED 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-        else if (_nextStatus == ProjectStatus.Settled) {
-            require(
-                checkIsCampaignOwner(project.parentCampaign),
-                "Sender must be an owner of the campaign"
-            );
-            require(
-                _nextSettledStartTimestamp > _nextGateStartTimestamp &&
-                    _nextGateStartTimestamp > _nextStageStartTimestamp,
-                "_nextGateStartTimestamp must be after _nextStageStartTimestamp"
-            );
-
-            // Pay submissions with no decisions
-            payLateUndecidedSubmissions(_id);
-
-            // Get latest task deadline
-            uint256 latestTaskDeadline = 0;
-            for (uint256 i = 0; i < project.childTasks.length; i++) {
-                if (
-                    tasks[project.childTasks[i]].deadline > latestTaskDeadline
-                ) {
-                    latestTaskDeadline = tasks[project.childTasks[i]].deadline;
-                }
-            }
-
-            // If task deadline is before timestamp of stage start and uncompleted
-            // then update deadline of task
-            for (uint256 i = 0; i < project.childTasks.length; i++) {
-                if (
-                    tasks[project.childTasks[i]].deadline <
-                    max(_nextStageStartTimestamp, block.timestamp + 1 days) &&
-                    !tasks[project.childTasks[i]].completed
-                ) {
-                    tasks[project.childTasks[i]].deadline = max(
-                        _nextGateStartTimestamp - 1 seconds,
-                        latestTaskDeadline
-                    );
-                }
-            }
-
-            // Update project milestones
-            typicalProjectMilestonesUpdate(
-                _id,
-                _nextStageStartTimestamp,
-                _nextGateStartTimestamp,
-                _nextSettledStartTimestamp,
-                latestTaskDeadline
-            );
-        }
-        // GOING INTO CLOSED 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
-        else if (_nextStatus == ProjectStatus.Closed) {
-            require(
-                project.status == ProjectStatus.Settled,
-                "Project must currently be settled"
-            );
-        }
-        project.status = _nextStatus;
     }
 
-    // Conditions for going to Stage 🔴🔴🔴
+    // Figure out lateness and where we should be ✅
+    function statusFixer(
+        uint256 _id
+    ) public view returns (uint256, ProjectStatus) {
+        Project storage project = projects[_id];
+        ProjectStatus shouldBeStatus = whatStatusProjectShouldBeAt(_id);
+        uint256 delta = 0;
+
+        // If we are where we should be then return and do nothing
+        if (shouldBeStatus == project.status) {
+            delta = 0;
+            return (delta, shouldBeStatus);
+        }
+
+        // If we should be in settled but are in gate, then return
+        // moving to settled needs owner input so we'll just wait here
+        if (
+            shouldBeStatus == ProjectStatus.Settled &&
+            project.status == ProjectStatus.Gate
+        ) {
+            delta = 0;
+            return (delta, shouldBeStatus);
+        } else {
+            // Iterate until we get to where we should be
+            while (shouldBeStatus != project.status) {
+                updateProjectStatus(_id);
+                shouldBeStatus = whatStatusProjectShouldBeAt(_id);
+            }
+        }
+    }
+
+    // Returns the status corresponding to our current timestamp ✅
+    function whatStatusProjectShouldBeAt(
+        uint256 _id
+    ) public view returns (ProjectStatus) {
+        Project storage project = projects[_id];
+        require(
+            project.status != ProjectStatus.Closed,
+            "Project must be running"
+        );
+        if (block.timestamp < project.nextMilestone.startStageTimestamp) {
+            return ProjectStatus.Settled;
+        } else if (block.timestamp < project.nextMilestone.startGateTimestamp) {
+            return ProjectStatus.Stage;
+        } else if (
+            block.timestamp < project.nextMilestone.startSettledTimestamp
+        ) {
+            return ProjectStatus.Gate;
+        } else {
+            return ProjectStatus.Settled;
+        }
+    }
+
+    // Conditions for going to Stage ✅
     function toStageConditions(
         uint256 _id
     )
@@ -712,42 +819,34 @@ contract StandardCampaign {
         returns (bool)
     {
         Project storage project = projects[_id];
-        Task[] memory uncompletedTasks = getTasksOfProject(
+        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
             _id,
-            TaskStatusFilter.Uncompleted
+            TaskStatusFilter.NotClosed
         );
 
         bool currentStatusValid = project.status == ProjectStatus.GenesisGate ||
             project.status == ProjectStatus.Settled;
         bool projectHasWorkers = project.workers.length > 0;
-        bool tasksHaveWorkers = false;
-        bool tasksHaveFutureDeadlines = true; // initialize to true
+        bool allTasksHaveWorkers = true;
         bool inStagePeriod = block.timestamp >=
             project.nextMilestone.startStageTimestamp;
 
-        for (uint256 i = 0; i < uncompletedTasks.length; i++) {
-            if (
-                uncompletedTasks[i].deadline <= block.timestamp &&
-                uncompletedTasks[i].deadline >=
-                project.nextMilestone.startGateTimestamp
-            ) {
-                tasksHaveFutureDeadlines = false;
-                break;
-            }
-            if (uncompletedTasks[i].worker != address(0)) {
-                tasksHaveWorkers = true;
+        // Ensure all tasks have workers
+        for (uint256 i = 0; i < notClosedTasks.length; i++) {
+            if (notClosedTasks[i].worker == address(0)) {
+                allTasksHaveWorkers = false;
             }
         }
 
+        // All conditions must be true to go to stage
         return
-            tasksHaveWorkers &&
-            tasksHaveFutureDeadlines &&
+            allTasksHaveWorkers &&
             currentStatusValid &&
             projectHasWorkers &&
             inStagePeriod;
     }
 
-    // Conditions for going to Gate 🔴🔴🔴
+    // Conditions for going to Gate ✅
     function toGateConditions(
         uint256 _id
     )
@@ -766,7 +865,7 @@ contract StandardCampaign {
         return currentStatusValid && inGatePeriod;
     }
 
-    // Conditions for going to Settled 🔴🔴🔴
+    // Conditions for going to Settled ✅
     function toSettledConditions(
         uint256 _id
     )
@@ -831,7 +930,7 @@ contract StandardCampaign {
             ) {
                 tasks[project.childTasks[i]].submission.status ==
                     SubmissionStatus.Accepted;
-                tasks[project.childTasks[i]].completed == true;
+                tasks[project.childTasks[i]].closed == true;
                 tasks[project.childTasks[i]].paid == true;
                 tasks[project.childTasks[i]].worker.transfer(
                     tasks[project.childTasks[i]].reward
@@ -1012,32 +1111,32 @@ contract StandardCampaign {
     }
 
     // Get tasks in a project ✅
-    function getTasksOfProject(
+    function getTasksOfProjectClosedFilter(
         uint256 _id,
         TaskStatusFilter _statusFilter
     ) public view returns (Task[] memory) {
         Project memory parentProject = projects[_id];
-        if (_statusFilter == TaskStatusFilter.Uncompleted) {
+        if (_statusFilter == TaskStatusFilter.NotClosed) {
             // Get uncompleted tasks
             Task[] memory _tasks = new Task[](
                 countTasksWithFilter(_id, _statusFilter)
             );
             uint256 j = 0;
             for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (!tasks[parentProject.childTasks[i]].completed) {
+                if (!tasks[parentProject.childTasks[i]].closed) {
                     _tasks[j] = tasks[parentProject.childTasks[i]];
                     j++;
                 }
             }
             return _tasks;
-        } else if (_statusFilter == TaskStatusFilter.Completed) {
+        } else if (_statusFilter == TaskStatusFilter.Closed) {
             // Get completed tasks
             Task[] memory _tasks = new Task[](
                 countTasksWithFilter(_id, _statusFilter)
             );
             uint256 j = 0;
             for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (tasks[parentProject.childTasks[i]].completed) {
+                if (tasks[parentProject.childTasks[i]].closed) {
                     _tasks[j] = tasks[parentProject.childTasks[i]];
                     j++;
                 }
@@ -1062,13 +1161,13 @@ contract StandardCampaign {
         uint256[] memory childTasks = projects[_id].childTasks;
         for (uint256 i = 0; i < childTasks.length; i++) {
             if (
-                _statusFilter == TaskStatusFilter.Completed &&
-                tasks[childTasks[i]].completed
+                _statusFilter == TaskStatusFilter.Closed &&
+                tasks[childTasks[i]].closed
             ) {
                 taskCounter++;
             } else if (
-                _statusFilter == TaskStatusFilter.Uncompleted &&
-                !tasks[childTasks[i]].completed
+                _statusFilter == TaskStatusFilter.NotClosed &&
+                !tasks[childTasks[i]].closed
             ) {
                 taskCounter++;
             } else if (_statusFilter == TaskStatusFilter.All) {
@@ -1185,7 +1284,7 @@ contract StandardCampaign {
         task.metadata = _metadata;
         task.creationTime = block.timestamp;
         task.deadline = _deadline;
-        task.completed = false;
+        task.closed = false;
 
         // Add parent project to task and vice versa
         task.parentProject = _parentProjectID;

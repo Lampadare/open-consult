@@ -1,5 +1,9 @@
-- automatic accepted if submissions are not decided on after beginning of settled period
-- send funds to workers when going settled
 - if we are past the window of a certain phase but still havent gone to the next phase we should be able to push everything by however much time we are late
-- if owner doesn't move to settled, nothing can happen
 - solve the issue of what happens if we don't go to stage because we dont have any workers and that's the case for a long time
+- finalise behaviour of decision tree for submission handling
+- break down update project into autoUpdater (autoUpdater takes where we at timewise and finds out where we should be and cascades through statuses depending on that) and goToSettled (necessitates Owner action and input for future milestones) also needs goToClosed! and just delete functionality for goToGenesis because can't exist really
+- make a function that allows the owner to remove workers from the project at gates
+- check for deadline when going to settled and if past deadline then go to closed
+- give option for owner to go to closed instead of going settled
+- if adding tasks during settled, tasks can't be modified and deadline of task must be between stage start and gate start
+- change genesis to gate and make nextmilestone at creation in a way so that the current timestamp should be settled
