@@ -8,6 +8,7 @@
 [-] Worker enrollment _!infra_
 [-] Task submission _!infra_
 
+[-] function for assigning tasks to workers _>func_
 [-] refund worker stake when they leave, only doable in gate or closed _>func_
 [-] Application acceptance _>func_
 [-] Project/Campaign Locked Funds _>func_

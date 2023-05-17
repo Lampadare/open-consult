@@ -327,6 +327,16 @@ contract StandardCampaign {
         _;
     }
 
+    // Lazy Project Status Updater
+    modifier lazyStatusUpdaterStart(uint256 _id) {
+        statusFixer(_id);
+        _;
+    }
+    modifier lazyStatusUpdaterEnd(uint256 _id) {
+        _;
+        statusFixer(_id);
+    }
+
     // Project Roles
     modifier isProjectWorker(uint256 _id) {
         require(
@@ -716,53 +726,54 @@ contract StandardCampaign {
 
         // GOING INTO STAGE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
         if (project.status == ProjectStatus.Settled) {
-            require(toStageConditions(_id), "Project cannot go to stage");
-            uint256 lateness = 0;
+            if (toStageFastForwardConditions(_id)) {
+                // update project status
+                project.status = ProjectStatus.Stage;
+                // delete all votes
+                delete project.fastForward;
 
-            if (block.timestamp > project.nextMilestone.startStageTimestamp) {
-                lateness =
-                    block.timestamp -
-                    project.nextMilestone.startStageTimestamp;
+                // LOCK FUNDS HERE ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+                return;
+            } else if (toStageConditions(_id)) {
+                // adjust lateness
+                adjustLatenessBeforeStage(_id);
+                // update project status
+                project.status = ProjectStatus.Stage;
+                // delete all votes
+                delete project.fastForward;
+
+                // LOCK FUNDS HERE ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+                return;
             }
-
-            Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
-                _id,
-                TaskStatusFilter.NotClosed
-            );
-
-            for (uint256 i = 0; i < notClosedTasks.length; i++) {
-                //
-                if (
-                    notClosedTasks[i].deadline >=
-                    project.nextMilestone.startGateTimestamp
-                ) {
-                    notClosedTasks[i].deadline += lateness; // add lateness to deadline
-                }
-            }
-
-            // add lateness to nextmilestone
-            project.nextMilestone.startGateTimestamp += lateness;
-            project.nextMilestone.startSettledTimestamp += lateness;
-
-            project.status = ProjectStatus.Stage;
-
-            // LOCK FUNDS HERE ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
         }
         // GOING INTO GATE 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
         else if (project.status == ProjectStatus.Stage) {
-            require(toGateConditions(_id), "Project cannot go to gate");
-
-            project.status = ProjectStatus.Gate;
+            if (toGateFastForwardConditions(_id)) {
+                // update project status
+                project.status = ProjectStatus.Gate;
+                // delete all votes
+                delete project.fastForward;
+                return;
+            } else if (toGateConditions(_id)) {
+                // update project status
+                project.status = ProjectStatus.Gate;
+                // delete all votes
+                delete project.fastForward;
+                return;
+            }
         }
     }
 
-    // Figure out lateness and where we should be ✅
+    // Figure out where we are and where we should be ✅
     function statusFixer(uint256 _id) public {
         Project storage project = projects[_id];
         ProjectStatus shouldBeStatus = whatStatusProjectShouldBeAt(_id);
 
-        // If we are where we should be then return and do nothing
-        if (shouldBeStatus == project.status) {
+        // If we are where we should be and votes allow to fast forward, try to fast forward
+        // Otherwise, do nothing
+        if (shouldBeStatus == project.status && checkFastForwardStatus(_id)) {
+            updateProjectStatus(_id);
+        } else {
             return;
         }
 
@@ -785,7 +796,14 @@ contract StandardCampaign {
     // Returns the status corresponding to our current timestamp ✅
     function whatStatusProjectShouldBeAt(
         uint256 _id
-    ) public view returns (ProjectStatus) {
+    )
+        public
+        view
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        returns (ProjectStatus)
+    {
         Project storage project = projects[_id];
         require(
             project.status != ProjectStatus.Closed,
@@ -802,6 +820,41 @@ contract StandardCampaign {
         } else {
             return ProjectStatus.Settled;
         }
+    }
+
+    // Adjust lateness of Project before stage ✅
+    function adjustLatenessBeforeStage(
+        uint256 _id
+    )
+        internal
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+    {
+        Project storage project = projects[_id];
+        uint256 lateness = 0;
+
+        // If we are late, add lateness to all tasks and nextmilestone
+        if (block.timestamp > project.nextMilestone.startStageTimestamp) {
+            lateness =
+                block.timestamp -
+                project.nextMilestone.startStageTimestamp;
+        }
+
+        // Get NotClosed tasks
+        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+            _id,
+            TaskStatusFilter.NotClosed
+        );
+
+        // Add lateness to all tasks
+        for (uint256 i = 0; i < notClosedTasks.length; i++) {
+            notClosedTasks[i].deadline += lateness; // add lateness to deadline
+        }
+
+        // add lateness to nextmilestone
+        project.nextMilestone.startGateTimestamp += lateness;
+        project.nextMilestone.startSettledTimestamp += lateness;
     }
 
     // Conditions for going to Stage ✅
@@ -831,6 +884,7 @@ contract StandardCampaign {
         for (uint256 i = 0; i < notClosedTasks.length; i++) {
             if (notClosedTasks[i].worker == address(0)) {
                 allTasksHaveWorkers = false;
+                return false;
             }
         }
 
@@ -840,6 +894,46 @@ contract StandardCampaign {
             currentStatusValid &&
             projectHasWorkers &&
             inStagePeriod;
+    }
+
+    // Conditions for fast forwarding to Stage ✅
+    function toStageFastForwardConditions(
+        uint256 _id
+    )
+        public
+        view
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        returns (bool)
+    {
+        Project storage project = projects[_id];
+        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+            _id,
+            TaskStatusFilter.NotClosed
+        );
+
+        bool currentStatusValid = project.status == ProjectStatus.Settled;
+        bool projectHasWorkers = project.workers.length > 0;
+        bool allTasksHaveWorkers = true;
+        bool stillInSettledPeriod = block.timestamp <
+            project.nextMilestone.startStageTimestamp;
+
+        // Ensure all tasks have workers
+        for (uint256 i = 0; i < notClosedTasks.length; i++) {
+            if (notClosedTasks[i].worker == address(0)) {
+                allTasksHaveWorkers = false;
+                return false;
+            }
+        }
+
+        // All conditions must be true to go to stage
+        return
+            allTasksHaveWorkers &&
+            currentStatusValid &&
+            projectHasWorkers &&
+            stillInSettledPeriod &&
+            checkFastForwardStatus(_id);
     }
 
     // Conditions for going to Gate ✅
@@ -859,6 +953,42 @@ contract StandardCampaign {
             project.nextMilestone.startGateTimestamp;
 
         return currentStatusValid && inGatePeriod;
+    }
+
+    // Conditions for fast forwarding to Gate ✅
+    function toGateFastForwardConditions(
+        uint256 _id
+    )
+        public
+        view
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        returns (bool)
+    {
+        Project storage project = projects[_id];
+        bool currentStatusValid = project.status == ProjectStatus.Stage;
+        bool stillInStagePeriod = block.timestamp <
+            project.nextMilestone.startGateTimestamp;
+        bool allTasksHaveSubmissions = true;
+
+        // Ensure all NotClosed tasks have submissions
+        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+            _id,
+            TaskStatusFilter.NotClosed
+        );
+        for (uint256 i = 0; i < notClosedTasks.length; i++) {
+            if (notClosedTasks[i].submission.status == SubmissionStatus.None) {
+                allTasksHaveSubmissions = false;
+                return false;
+            }
+        }
+
+        return
+            currentStatusValid &&
+            stillInStagePeriod &&
+            allTasksHaveSubmissions &&
+            checkFastForwardStatus(_id);
     }
 
     // Conditions for going to Settled ✅
@@ -936,8 +1066,8 @@ contract StandardCampaign {
         }
     }
 
-    // Updates project status if fastforward conditions are fulfilled ⚠️ -> update for new behaviour
-    function fastForwardStatus(uint256 _id) public {
+    // Checks that voting conditions are met ✅
+    function checkFastForwardStatus(uint256 _id) public view returns (bool) {
         Project storage project = projects[_id];
 
         // Check for each vote in the fastForward array, if at least 1 owner
@@ -954,7 +1084,7 @@ contract StandardCampaign {
             ) {
                 workerVotes++;
             } else {
-                return;
+                return false;
             }
             if (
                 checkIsCampaignOwner(_id, project.fastForward[i].voter) &&
@@ -970,25 +1100,17 @@ contract StandardCampaign {
             }
         }
 
-        if (
+        return
             ownerVotes > 0 &&
             acceptorVotes > 0 &&
-            project.workers.length == workerVotes
-        ) {
-            if (toStageConditions(_id)) {
-                updateProjectStatus(_id);
-                //reset fastForward array
-                delete project.fastForward;
-            } else if (toGateConditions(_id)) {
-                updateProjectStatus(_id);
-                //reset fastForward array
-                delete project.fastForward;
-            }
-        }
+            project.workers.length == workerVotes;
     }
 
     // If sender is owner, acceptor or worker, append vote to fast forward status ✅
-    function voteFastForwardStatus(uint256 _id, bool _vote) public {
+    function voteFastForwardStatus(
+        uint256 _id,
+        bool _vote
+    ) public lazyStatusUpdaterEnd(_id) {
         require(
             checkIsCampaignAcceptor(projects[_id].parentCampaign) ||
                 checkIsCampaignOwner(projects[_id].parentCampaign) ||
@@ -1010,8 +1132,6 @@ contract StandardCampaign {
         if (!voterFound) {
             project.fastForward.push(Vote(msg.sender, _vote));
         }
-
-        fastForwardStatus(_id);
     }
 
     // Apply to project ✅
