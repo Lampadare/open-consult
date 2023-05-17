@@ -2,24 +2,19 @@
 
 [-] EVERYTHING must be settled at every gate
 [-] Remove worker function _>func_
-
-[-] Project status _!infra_
 [-] Locked funds entry in the campaign _!infra_
 [-] Campaign Worker Proposal _!infra_
 [-] Project Worker Proposal _!infra_
 [-] Worker enrollment _!infra_
 [-] Task submission _!infra_
 
-[-] function to remove workers by Owner
 [-] refund worker stake when they leave, only doable in gate or closed _>func_
 [-] Application acceptance _>func_
-[-] Project update _>func_
 [-] Project/Campaign Locked Funds _>func_
-[-] Make stage/gate infra _>func_
 [-] Locked funds _>func_
 [-] Project Worker Proposal _>func_
 [-] Acceptance/declining of submissions _>func_
-[-] fake ^Dispute with event _>func_
+[x] fake ^Dispute with event _>func_
 [-] Worker enrollment _>func_
 [-] Worker leave function conditional on gate stage _>func_
 [-] Task submission _>func_
@@ -67,3 +62,6 @@
 [x] solve the issue of what happens if we don't go to stage because we dont have any workers and that's the case for a long time
 [x] break down update project into autoUpdater (autoUpdater takes where we at timewise and finds out where we should be and cascades through statuses depending on that) and goToSettled (necessitates Owner action and input for future milestones) also needs goToClosed! and just delete functionality for goToGenesis because can't exist really
 [x] give option for owner to go to closed instead of going settled
+[x] Project status _!infra_
+[x] Project update status _>func_
+[x] Make stage/gate infra _>func_
