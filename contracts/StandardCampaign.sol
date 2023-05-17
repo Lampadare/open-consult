@@ -278,13 +278,6 @@ contract StandardCampaign {
     }
 
     // Project Statuses
-    modifier isProjectGenesisGate(uint256 _id) {
-        require(
-            projects[_id].status == ProjectStatus.GenesisGate,
-            "Project must be at genesis gate"
-        );
-        _;
-    }
     modifier isProjectGate(uint256 _id) {
         require(
             projects[_id].status == ProjectStatus.Gate,
@@ -554,7 +547,7 @@ contract StandardCampaign {
 
     /// ***
     /// PROJECT WRITE FUNCTIONS
-    // Create a new project ⚠️
+    // Create a new project ⚠️ -> deadline considerations
     function makeProject(
         string memory _title,
         string memory _metadata,
@@ -580,7 +573,8 @@ contract StandardCampaign {
         project.metadata = _metadata;
         project.creationTime = block.timestamp;
         project.deadline = _deadline; // ⚠️ warning: deadline can't be earlier than latest task deadline + settling time
-        project.status = ProjectStatus.Settled;
+        project.status = ProjectStatus.Gate;
+        project.nextMilestone = NextMilestone(0, 0, 0);
 
         // Open campaigns don't require applications
         if (parentCampaign.style == CampaignStyle.Open) {
@@ -628,7 +622,9 @@ contract StandardCampaign {
             checkIsCampaignOwner(project.parentCampaign),
             "Sender must be an owner of the campaign"
         );
-        updateProjectStatus(_id, 0, 1, 2);
+
+        // Just to clear any loose ends
+        goToSettledStatus(_id, 0, 1, 2);
 
         project.status = ProjectStatus.Closed;
     }
@@ -647,6 +643,9 @@ contract StandardCampaign {
         isProjectGate(_id)
     {
         Project storage project = projects[_id];
+
+        // Check conditions for going to settled
+        require(toSettledConditions(_id), "Project cannot go to settled");
         // Ensure sender is an owner of the campaign
         require(
             checkIsCampaignOwner(project.parentCampaign),
@@ -699,6 +698,9 @@ contract StandardCampaign {
                 );
             }
         }
+
+        // Update project status
+        project.status = ProjectStatus.Settled;
     }
 
     // Update project STATUS ✅
@@ -755,17 +757,13 @@ contract StandardCampaign {
     }
 
     // Figure out lateness and where we should be ✅
-    function statusFixer(
-        uint256 _id
-    ) public view returns (uint256, ProjectStatus) {
+    function statusFixer(uint256 _id) public {
         Project storage project = projects[_id];
         ProjectStatus shouldBeStatus = whatStatusProjectShouldBeAt(_id);
-        uint256 delta = 0;
 
         // If we are where we should be then return and do nothing
         if (shouldBeStatus == project.status) {
-            delta = 0;
-            return (delta, shouldBeStatus);
+            return;
         }
 
         // If we should be in settled but are in gate, then return
@@ -774,8 +772,7 @@ contract StandardCampaign {
             shouldBeStatus == ProjectStatus.Settled &&
             project.status == ProjectStatus.Gate
         ) {
-            delta = 0;
-            return (delta, shouldBeStatus);
+            return;
         } else {
             // Iterate until we get to where we should be
             while (shouldBeStatus != project.status) {
@@ -824,8 +821,7 @@ contract StandardCampaign {
             TaskStatusFilter.NotClosed
         );
 
-        bool currentStatusValid = project.status == ProjectStatus.GenesisGate ||
-            project.status == ProjectStatus.Settled;
+        bool currentStatusValid = project.status == ProjectStatus.Settled;
         bool projectHasWorkers = project.workers.length > 0;
         bool allTasksHaveWorkers = true;
         bool inStagePeriod = block.timestamp >=
@@ -940,7 +936,7 @@ contract StandardCampaign {
         }
     }
 
-    // Updates project status if fastforward conditions are fulfilled ✅
+    // Updates project status if fastforward conditions are fulfilled ⚠️ -> update for new behaviour
     function fastForwardStatus(uint256 _id) public {
         Project storage project = projects[_id];
 
@@ -980,11 +976,11 @@ contract StandardCampaign {
             project.workers.length == workerVotes
         ) {
             if (toStageConditions(_id)) {
-                updateProjectStatus(_id, ProjectStatus.Stage, 0, 0, 0);
+                updateProjectStatus(_id);
                 //reset fastForward array
                 delete project.fastForward;
             } else if (toGateConditions(_id)) {
-                updateProjectStatus(_id, ProjectStatus.Gate, 0, 0, 0);
+                updateProjectStatus(_id);
                 //reset fastForward array
                 delete project.fastForward;
             }
