@@ -3,7 +3,7 @@
 pragma solidity ^0.8.9;
 
 contract StandardCampaign {
-    /// ***
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// STRUCTS DECLARATIONS
     struct Campaign {
         // Description of the campaign
@@ -42,7 +42,6 @@ contract StandardCampaign {
         uint256 weight;
         // Timestamps
         uint256 creationTime;
-        uint256 deadline;
         Vote[] fastForward;
         NextMilestone nextMilestone;
         ProjectStatus status;
@@ -167,10 +166,8 @@ contract StandardCampaign {
     uint256 public minimumGateTime = 2 days;
     // Within gate, maximum time to decide on submissions
     uint256 public taskDecisionTime = 1 days;
-    /// END OF STRUCTS DECLARATIONS
-    /// ***
 
-    /// ***
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// MODIFIERS
     // Timestamps
     modifier isFutureTimestamp(uint256 timestamp) {
@@ -184,15 +181,19 @@ contract StandardCampaign {
 
     // Does it exist?
     modifier isCampaignExisting(uint256 _id) {
-        require(_id > campaignCount, "Campaign does not exist");
+        require(_id < campaignCount, "Campaign does not exist");
         _;
     }
     modifier isProjectExisting(uint256 _id) {
-        require(_id > projectCount, "Project does not exist");
+        require(_id < projectCount, "Project does not exist");
         _;
     }
     modifier isTaskExisting(uint256 _id) {
-        require(_id > taskCount, "Task does not exist");
+        require(_id < taskCount, "Task does not exist");
+        _;
+    }
+    modifier isApplicationExisting(uint256 _id) {
+        require(_id < applicationCount, "Application does not exist");
         _;
     }
 
@@ -304,15 +305,6 @@ contract StandardCampaign {
             projects[_id].status != ProjectStatus.Closed,
             "Project must be running"
         );
-        if (
-            campaigns[projects[_id].parentCampaign].style ==
-            CampaignStyle.Private
-        ) {
-            require(
-                projects[_id].deadline >= block.timestamp,
-                "Private campaign projects must be before deadline to be running"
-            );
-        }
         _;
     }
     modifier isProjectClosed(uint256 _id) {
@@ -320,10 +312,6 @@ contract StandardCampaign {
             projects[_id].status == ProjectStatus.Closed,
             "Project must be closed"
         );
-        _;
-    }
-    modifier isApplicationExisting(uint256 _id) {
-        require(_id < applicationCount, "Application does not exist");
         _;
     }
 
@@ -385,13 +373,8 @@ contract StandardCampaign {
         _;
     }
 
-    /// END OF MODIFIERS
-    /// ***
-
-    /// ***
-    /// CAMPAIGN WRITE FUNCTIONS
-
-    /// OPEN-PRIVATE DUAL USE FUNCTIONS
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// CAMPAIGN WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new campaign, optionally fund it ✅
     function makeCampaign(
         string memory _title,
@@ -469,7 +452,6 @@ contract StandardCampaign {
         campaign.fundings.push(newFunding);
     }
 
-    /// PRIVATE CAMPAIGN FUNCTIONS
     // Refund campaign funding ⚠️ (needs checking for locked funds!!!)
     function refundCampaignFunding(
         uint256 _id,
@@ -511,7 +493,7 @@ contract StandardCampaign {
         uint256 _id,
         string memory _title,
         string memory _metadata,
-        CampaignStyle _style,
+        // CampaignStyle _style,
         uint256 _deadline,
         CampaignStatus _status,
         address payable[] memory _owners,
@@ -545,19 +527,41 @@ contract StandardCampaign {
 
         campaign.title = _title; //✅
         campaign.metadata = _metadata; //✅
-        campaign.style = _style; //❌ (needs all private-to-open effects for transition)
+        //campaign.style = _style; //❌ (needs all private-to-open effects for transition)
         campaign.deadline = _deadline; //⚠️ (can't be less than maximum settled time of current stage of contained projects)
         campaign.status = _status; //⚠️ (can't be closed if there are open projects)
         campaign.owners = _owners; //✅
         campaign.acceptors = _acceptors; //✅
     }
 
-    /// END OF CAMPAIGN WRITE FUNCTIONS
-    /// ***
+    /// ⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️
+    /// CAMPAIGN READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
+    // Get all campaigns ✅
+    function getAllCampaigns() public view returns (Campaign[] memory) {
+        Campaign[] memory _campaigns = new Campaign[](campaignCount);
+        for (uint256 i = 0; i < campaignCount; i++) {
+            _campaigns[i] = campaigns[i];
+        }
+        return _campaigns;
+    }
 
-    /// ***
-    /// PROJECT WRITE FUNCTIONS
-    // Create a new project ⚠️ -> deadline considerations
+    // Get campaign by ID ✅
+    function getCampaignByID(
+        uint256 _id
+    ) public view returns (Campaign memory) {
+        return campaigns[_id];
+    }
+
+    // Get campaign funders & contributions ❓(is this needed when we have getCampaignByID?)
+    function getFundingsOfCampaign(
+        uint256 _id
+    ) public view returns (Fundings[] memory) {
+        return campaigns[_id].fundings;
+    }
+
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// PROJECT WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
+    // Create a new project ✅
     function makeProject(
         string memory _title,
         string memory _metadata,
@@ -582,7 +586,6 @@ contract StandardCampaign {
         project.title = _title;
         project.metadata = _metadata;
         project.creationTime = block.timestamp;
-        project.deadline = _deadline; // ⚠️ warning: deadline can't be earlier than latest task deadline + settling time
         project.status = ProjectStatus.Gate;
         project.nextMilestone = NextMilestone(0, 0, 0);
 
@@ -637,6 +640,9 @@ contract StandardCampaign {
         goToSettledStatus(_id, 0, 1, 2);
 
         project.status = ProjectStatus.Closed;
+
+        // Clear fast forward votes
+        delete project.fastForward;
     }
 
     // Go to settled ✅
@@ -661,6 +667,7 @@ contract StandardCampaign {
             checkIsCampaignOwner(project.parentCampaign),
             "Sender must be an owner of the campaign"
         );
+
         // Ensure timestamps are in order
         require(
             _nextSettledStartTimestamp > _nextGateStartTimestamp &&
@@ -711,6 +718,9 @@ contract StandardCampaign {
 
         // Update project status
         project.status = ProjectStatus.Settled;
+
+        // Clear fast forward votes
+        delete project.fastForward;
     }
 
     // Update project STATUS ✅
@@ -764,7 +774,7 @@ contract StandardCampaign {
         }
     }
 
-    // Figure out where we are and where we should be ✅
+    // Figure out where we are and where we should be and fix if needed ✅
     function statusFixer(uint256 _id) public {
         Project storage project = projects[_id];
         ProjectStatus shouldBeStatus = whatStatusProjectShouldBeAt(_id);
@@ -790,35 +800,6 @@ contract StandardCampaign {
                 updateProjectStatus(_id);
                 shouldBeStatus = whatStatusProjectShouldBeAt(_id);
             }
-        }
-    }
-
-    // Returns the status corresponding to our current timestamp ✅
-    function whatStatusProjectShouldBeAt(
-        uint256 _id
-    )
-        public
-        view
-        isProjectExisting(_id)
-        isProjectRunning(_id)
-        isCampaignRunning(projects[_id].parentCampaign)
-        returns (ProjectStatus)
-    {
-        Project storage project = projects[_id];
-        require(
-            project.status != ProjectStatus.Closed,
-            "Project must be running"
-        );
-        if (block.timestamp < project.nextMilestone.startStageTimestamp) {
-            return ProjectStatus.Settled;
-        } else if (block.timestamp < project.nextMilestone.startGateTimestamp) {
-            return ProjectStatus.Stage;
-        } else if (
-            block.timestamp < project.nextMilestone.startSettledTimestamp
-        ) {
-            return ProjectStatus.Gate;
-        } else {
-            return ProjectStatus.Settled;
         }
     }
 
@@ -855,6 +836,237 @@ contract StandardCampaign {
         // add lateness to nextmilestone
         project.nextMilestone.startGateTimestamp += lateness;
         project.nextMilestone.startSettledTimestamp += lateness;
+    }
+
+    // Update project milestones ✅
+    function typicalProjectMilestonesUpdate(
+        uint256 _id,
+        uint256 _nextStageStartTimestamp,
+        uint256 _nextGateStartTimestamp,
+        uint256 _nextSettledStartTimestamp,
+        uint256 latestTaskDeadline
+    ) private {
+        Project storage project = projects[_id];
+
+        // Upcoming milestones based on input
+        NextMilestone memory _nextMilestone = NextMilestone(
+            // timestamp of stage start must be at least 24 hours from now as grace period
+            max(_nextStageStartTimestamp, block.timestamp + minimumSettledTime),
+            // timestamp of gate start is at least after latest task deadline
+            max(_nextGateStartTimestamp, latestTaskDeadline + 1 seconds),
+            // timestamp of settled start must be after latest task deadline + 2 day
+            max(
+                _nextSettledStartTimestamp,
+                max(_nextGateStartTimestamp, latestTaskDeadline + 1 seconds) +
+                    minimumGateTime
+            )
+        );
+
+        project.nextMilestone = _nextMilestone;
+    }
+
+    // Automatically accept decisions which have received a submission and are past the decision time ✅
+    function payLateUndecidedSubmissions(uint256 _id) public {
+        Project storage project = projects[_id];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+
+        require(
+            block.timestamp >=
+                project.nextMilestone.startGateTimestamp + taskDecisionTime,
+            "Past end of max submission decision time, anyone can release funds of tasks missing decisions."
+        );
+
+        for (uint256 i = 0; i < project.childTasks.length; i++) {
+            if (
+                tasks[project.childTasks[i]].submission.status ==
+                SubmissionStatus.Pending
+            ) {
+                tasks[project.childTasks[i]].submission.status ==
+                    SubmissionStatus.Accepted;
+                tasks[project.childTasks[i]].closed == true;
+                tasks[project.childTasks[i]].paid == true;
+                tasks[project.childTasks[i]].worker.transfer(
+                    tasks[project.childTasks[i]].reward
+                );
+                campaign.lockedRewards -= tasks[project.childTasks[i]].reward;
+            }
+        }
+    }
+
+    // If sender is owner, acceptor or worker, append vote to fast forward status ✅
+    function voteFastForwardStatus(
+        uint256 _id,
+        bool _vote
+    ) public lazyStatusUpdaterEnd(_id) {
+        require(
+            checkIsCampaignAcceptor(projects[_id].parentCampaign) ||
+                checkIsCampaignOwner(projects[_id].parentCampaign) ||
+                checkIsProjectWorker(_id),
+            "Sender must be an acceptor, worker or owner"
+        );
+        Project storage project = projects[_id];
+
+        bool voterFound = false;
+
+        for (uint256 i = 0; i < project.fastForward.length; i++) {
+            if (project.fastForward[i].voter == msg.sender) {
+                project.fastForward[i].vote = _vote;
+                voterFound = true;
+                break;
+            }
+        }
+
+        if (!voterFound) {
+            project.fastForward.push(Vote(msg.sender, _vote));
+        }
+    }
+
+    // Enrol to project as worker when no application is required ✅
+    function workerEnrolNoApplication(
+        uint256 _id,
+        uint256 _stake
+    )
+        public
+        payable
+        isCampaignRunning(projects[_id].parentCampaign)
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isMoneyIntended(_stake)
+        isMoreThanEnrolStake(_stake)
+        lazyStatusUpdaterEnd(_id)
+    {
+        Project storage project = projects[_id];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+
+        require(!project.applicationRequired, "Project requires applications");
+        require(
+            !checkIsProjectWorker(_id),
+            "Sender must not already be a worker"
+        );
+
+        // Creates application to deal with stake
+        Application storage application = applications[applicationCount];
+        application.metadata = "No Application Required";
+        application.applicant = msg.sender;
+        application.accepted = true;
+        application.enrolStake.funder = payable(msg.sender);
+        application.enrolStake.funding = _stake;
+        application.enrolStake.refunded = false;
+        application.parentProject = _id;
+
+        project.applications.push(applicationCount);
+        applicationCount++;
+
+        project.workers.push(msg.sender);
+        campaign.allTimeStakeholders.push(payable(msg.sender));
+        campaign.workers.push(payable(msg.sender));
+    }
+
+    // Apply to project to become Worker ✅
+    function applyToProject(
+        uint256 _id,
+        string memory _metadata,
+        uint256 _stake
+    )
+        public
+        payable
+        isCampaignRunning(projects[_id].parentCampaign)
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isMoneyIntended(_stake)
+        isMoreThanEnrolStake(_stake)
+        lazyStatusUpdaterEnd(_id)
+        returns (uint256)
+    {
+        Project storage project = projects[_id];
+        require(
+            project.applicationRequired,
+            "Project does not require applications"
+        );
+
+        Application storage application = applications[applicationCount];
+        application.metadata = _metadata;
+        application.applicant = msg.sender;
+        application.accepted = false;
+        application.enrolStake.funder = payable(msg.sender);
+        application.enrolStake.funding = _stake;
+        application.enrolStake.refunded = false;
+        application.parentProject = _id;
+
+        project.applications.push(applicationCount);
+        applicationCount++;
+        return applicationCount - 1;
+    }
+
+    // Worker application decision by acceptors ✅
+    function applicationDecision(
+        uint256 _applicationID,
+        bool _accepted
+    )
+        public
+        isProjectExisting(applications[_applicationID].parentProject)
+        isCampaignAcceptor(
+            projects[applications[_applicationID].parentProject].parentCampaign
+        )
+        isApplicationExisting(_applicationID)
+        lazyStatusUpdaterEnd(applications[_applicationID].parentProject)
+    {
+        Application storage application = applications[_applicationID];
+        Project storage project = projects[application.parentProject];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+        // if project or campaign is closed, decline or if project is past its deadline, decline
+        // also refund stake
+        if (
+            project.status == ProjectStatus.Closed ||
+            campaigns[project.parentCampaign].status == CampaignStatus.Closed ||
+            !_accepted
+        ) {
+            applications[_applicationID].accepted = false;
+            applications[_applicationID].enrolStake.refunded = true;
+            deleteItemInUintArray(_applicationID, project.applications);
+            payable(msg.sender).transfer(
+                applications[_applicationID].enrolStake.funding
+            );
+            return;
+        } else if (_accepted) {
+            project.workers.push(application.applicant);
+            campaign.allTimeStakeholders.push(payable(application.applicant));
+            campaign.workers.push(payable(application.applicant));
+            application.accepted = true;
+            // deleteItemInUintArray(_applicationID, project.applications); maybe??
+        }
+    }
+
+    /// ⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️
+    /// PROJECT READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
+
+    // Returns the status corresponding to our current timestamp ✅
+    function whatStatusProjectShouldBeAt(
+        uint256 _id
+    )
+        public
+        view
+        isProjectExisting(_id)
+        isProjectRunning(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        returns (ProjectStatus)
+    {
+        Project storage project = projects[_id];
+        require(
+            project.status != ProjectStatus.Closed,
+            "Project must be running"
+        );
+        if (block.timestamp < project.nextMilestone.startStageTimestamp) {
+            return ProjectStatus.Settled;
+        } else if (block.timestamp < project.nextMilestone.startGateTimestamp) {
+            return ProjectStatus.Stage;
+        } else if (
+            block.timestamp < project.nextMilestone.startSettledTimestamp
+        ) {
+            return ProjectStatus.Gate;
+        } else {
+            return ProjectStatus.Settled;
+        }
     }
 
     // Conditions for going to Stage ✅
@@ -1011,222 +1223,32 @@ contract StandardCampaign {
         return currentStatusValid && inSettledPeriod;
     }
 
-    // Update project milestones ✅
-    function typicalProjectMilestonesUpdate(
+    // How many tasks match filter? helper function for getTasksOfProjectClosedFilter() below✅
+    function countTasksWithFilter(
         uint256 _id,
-        uint256 _nextStageStartTimestamp,
-        uint256 _nextGateStartTimestamp,
-        uint256 _nextSettledStartTimestamp,
-        uint256 latestTaskDeadline
-    ) private {
-        Project storage project = projects[_id];
-
-        // Upcoming milestones based on input
-        NextMilestone memory _nextMilestone = NextMilestone(
-            // timestamp of stage start must be at least 24 hours from now as grace period
-            max(_nextStageStartTimestamp, block.timestamp + minimumSettledTime),
-            // timestamp of gate start is at least after latest task deadline
-            max(_nextGateStartTimestamp, latestTaskDeadline + 1 seconds),
-            // timestamp of settled start must be after latest task deadline + 2 day
-            max(
-                _nextSettledStartTimestamp,
-                max(_nextGateStartTimestamp, latestTaskDeadline + 1 seconds) +
-                    minimumGateTime
-            )
-        );
-
-        project.nextMilestone = _nextMilestone;
-    }
-
-    // Automatically accept decisions which have received a submission and are past the decision time ✅
-    function payLateUndecidedSubmissions(uint256 _id) public {
-        Project storage project = projects[_id];
-        Campaign storage campaign = campaigns[project.parentCampaign];
-
-        require(
-            block.timestamp >=
-                project.nextMilestone.startGateTimestamp + taskDecisionTime,
-            "Past end of max submission decision time, anyone can release funds of tasks missing decisions."
-        );
-
-        for (uint256 i = 0; i < project.childTasks.length; i++) {
+        TaskStatusFilter _statusFilter
+    ) internal view returns (uint256) {
+        uint256 taskCounter = 0;
+        uint256[] memory childTasks = projects[_id].childTasks;
+        for (uint256 i = 0; i < childTasks.length; i++) {
             if (
-                tasks[project.childTasks[i]].submission.status ==
-                SubmissionStatus.Pending
+                _statusFilter == TaskStatusFilter.Closed &&
+                tasks[childTasks[i]].closed
             ) {
-                tasks[project.childTasks[i]].submission.status ==
-                    SubmissionStatus.Accepted;
-                tasks[project.childTasks[i]].closed == true;
-                tasks[project.childTasks[i]].paid == true;
-                tasks[project.childTasks[i]].worker.transfer(
-                    tasks[project.childTasks[i]].reward
-                );
-                campaign.lockedRewards -= tasks[project.childTasks[i]].reward;
-            }
-        }
-    }
-
-    // Checks that voting conditions are met ✅
-    function checkFastForwardStatus(uint256 _id) public view returns (bool) {
-        Project storage project = projects[_id];
-
-        // Check for each vote in the fastForward array, if at least 1 owner
-        // and all workers voted true, and conditions are fulfilled,
-        // then move to next stage/gate/settled
-        uint256 ownerVotes = 0;
-        uint256 workerVotes = 0;
-        uint256 acceptorVotes = 0;
-
-        for (uint256 i = 0; i < project.fastForward.length; i++) {
-            if (
-                checkIsProjectWorker(_id, project.fastForward[i].voter) &&
-                project.fastForward[i].vote
+                taskCounter++;
+            } else if (
+                _statusFilter == TaskStatusFilter.NotClosed &&
+                !tasks[childTasks[i]].closed
             ) {
-                workerVotes++;
-            } else {
-                return false;
-            }
-            if (
-                checkIsCampaignOwner(_id, project.fastForward[i].voter) &&
-                project.fastForward[i].vote
-            ) {
-                ownerVotes++;
-            }
-            if (
-                checkIsCampaignAcceptor(_id, project.fastForward[i].voter) &&
-                project.fastForward[i].vote
-            ) {
-                acceptorVotes++;
+                taskCounter++;
+            } else if (_statusFilter == TaskStatusFilter.All) {
+                taskCounter++;
             }
         }
-
-        return
-            ownerVotes > 0 &&
-            acceptorVotes > 0 &&
-            project.workers.length == workerVotes;
+        return taskCounter;
     }
 
-    // If sender is owner, acceptor or worker, append vote to fast forward status ✅
-    function voteFastForwardStatus(
-        uint256 _id,
-        bool _vote
-    ) public lazyStatusUpdaterEnd(_id) {
-        require(
-            checkIsCampaignAcceptor(projects[_id].parentCampaign) ||
-                checkIsCampaignOwner(projects[_id].parentCampaign) ||
-                checkIsProjectWorker(_id),
-            "Sender must be an acceptor, worker or owner"
-        );
-        Project storage project = projects[_id];
-
-        bool voterFound = false;
-
-        for (uint256 i = 0; i < project.fastForward.length; i++) {
-            if (project.fastForward[i].voter == msg.sender) {
-                project.fastForward[i].vote = _vote;
-                voterFound = true;
-                break;
-            }
-        }
-
-        if (!voterFound) {
-            project.fastForward.push(Vote(msg.sender, _vote));
-        }
-    }
-
-    // Apply to project ✅
-    function applyToProject(
-        uint256 _id,
-        string memory _metadata,
-        uint256 _stake
-    )
-        public
-        payable
-        isCampaignRunning(projects[_id].parentCampaign)
-        isProjectExisting(_id)
-        isProjectRunning(_id)
-        isMoneyIntended(_stake)
-        isMoreThanEnrolStake(_stake)
-        returns (uint256)
-    {
-        Project storage project = projects[_id];
-        require(
-            project.applicationRequired,
-            "Project does not require applications"
-        );
-
-        Application storage application = applications[applicationCount];
-        application.metadata = _metadata;
-        application.applicant = msg.sender;
-        application.accepted = false;
-        application.enrolStake.funder = payable(msg.sender);
-        application.enrolStake.funding = _stake;
-        application.enrolStake.refunded = false;
-        application.parentProject = _id;
-
-        project.applications.push(applicationCount);
-        applicationCount++;
-        return applicationCount - 1;
-    }
-
-    // Application decision by acceptors ✅
-    function applicationDecision(
-        uint256 _applicationID,
-        bool _accepted
-    )
-        public
-        isProjectExisting(applications[_applicationID].parentProject)
-        isCampaignAcceptor(
-            projects[applications[_applicationID].parentProject].parentCampaign
-        )
-        isApplicationExisting(_applicationID)
-    {
-        Application storage application = applications[_applicationID];
-        Project storage project = projects[application.parentProject];
-        Campaign storage campaign = campaigns[project.parentCampaign];
-        // if project or campaign is closed, decline or if project is past its deadline, decline
-        // also refund stake
-        if (
-            project.status == ProjectStatus.Closed ||
-            project.deadline < block.timestamp ||
-            campaigns[project.parentCampaign].status == CampaignStatus.Closed ||
-            !_accepted
-        ) {
-            applications[_applicationID].accepted = false;
-            applications[_applicationID].enrolStake.refunded = true;
-            deleteItemInUintArray(_applicationID, project.applications);
-            payable(msg.sender).transfer(
-                applications[_applicationID].enrolStake.funding
-            );
-            return;
-        } else if (_accepted) {
-            project.workers.push(application.applicant);
-            campaign.allTimeStakeholders.push(payable(application.applicant));
-            campaign.workers.push(payable(application.applicant));
-            application.accepted = true;
-            // deleteItemInUintArray(_applicationID, project.applications); maybe??
-        }
-    }
-
-    // Pattern for deleting stuff from stuff ✅
-    function deleteItemInUintArray(
-        uint256 _ItemID,
-        uint256[] storage _array
-    ) internal {
-        uint256 i = 0;
-        while (i < _array.length) {
-            if (_array[i] == _ItemID) {
-                _array[i] = _array[_array.length - 1];
-                _array.pop();
-                return;
-            }
-            i++;
-        }
-        // Throw an error if the item was not found.
-        revert("Item not found");
-    }
-
-    // Get tasks in a project ✅
+    // Get tasks in a project based on Closed/NotClosed filter✅
     function getTasksOfProjectClosedFilter(
         uint256 _id,
         TaskStatusFilter _statusFilter
@@ -1268,34 +1290,44 @@ contract StandardCampaign {
         }
     }
 
-    // How many tasks match filter? helper function ✅
-    function countTasksWithFilter(
-        uint256 _id,
-        TaskStatusFilter _statusFilter
-    ) private view returns (uint256) {
-        uint256 taskCounter = 0;
-        uint256[] memory childTasks = projects[_id].childTasks;
-        for (uint256 i = 0; i < childTasks.length; i++) {
+    // Checks that voting conditions are met ✅
+    function checkFastForwardStatus(uint256 _id) public view returns (bool) {
+        Project storage project = projects[_id];
+
+        // Check for each vote in the fastForward array, if at least 1 owner
+        // and all workers voted true, and conditions are fulfilled,
+        // then move to next stage/gate/settled
+        uint256 ownerVotes = 0;
+        uint256 workerVotes = 0;
+        uint256 acceptorVotes = 0;
+
+        for (uint256 i = 0; i < project.fastForward.length; i++) {
             if (
-                _statusFilter == TaskStatusFilter.Closed &&
-                tasks[childTasks[i]].closed
+                checkIsProjectWorker(_id, project.fastForward[i].voter) &&
+                project.fastForward[i].vote
             ) {
-                taskCounter++;
-            } else if (
-                _statusFilter == TaskStatusFilter.NotClosed &&
-                !tasks[childTasks[i]].closed
+                workerVotes++;
+            } else {
+                return false;
+            }
+            if (
+                checkIsCampaignOwner(_id, project.fastForward[i].voter) &&
+                project.fastForward[i].vote
             ) {
-                taskCounter++;
-            } else if (_statusFilter == TaskStatusFilter.All) {
-                taskCounter++;
+                ownerVotes++;
+            }
+            if (
+                checkIsCampaignAcceptor(_id, project.fastForward[i].voter) &&
+                project.fastForward[i].vote
+            ) {
+                acceptorVotes++;
             }
         }
-        return taskCounter;
-    }
 
-    // Returns maximum of two numbers ✅
-    function max(uint a, uint b) private pure returns (uint) {
-        return a > b ? a : b;
+        return
+            ownerVotes > 0 &&
+            acceptorVotes > 0 &&
+            project.workers.length == workerVotes;
     }
 
     // Check if sender is owner of campaign ✅
@@ -1379,12 +1411,8 @@ contract StandardCampaign {
         return isWorker;
     }
 
-    // ??? How can I resolve the single project/ single campaign issue ???
-    /// END OF PROJECT WRITE FUNCTIONS
-    /// ***
-
-    /// ***
-    /// TASK WRITE FUNCTIONS
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// TASK WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new task
     function makeTask(
         string memory _title,
@@ -1416,38 +1444,35 @@ contract StandardCampaign {
         return taskCount - 1;
     }
 
-    /// END OF TASK WRITE FUNCTIONS
-    /// ***
+    /// ⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️
+    /// TASK READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
 
-    /// ***
-    /// CAMPAIGN READ FUNCTIONS
-    // Get all campaigns ✅
-    function getAllCampaigns() public view returns (Campaign[] memory) {
-        Campaign[] memory _campaigns = new Campaign[](campaignCount);
-        for (uint256 i = 0; i < campaignCount; i++) {
-            _campaigns[i] = campaigns[i];
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// UTILITY FUNCTIONS
+    // Returns maximum of two numbers ✅
+    function max(uint a, uint b) internal pure returns (uint) {
+        return a > b ? a : b;
+    }
+
+    // Pattern for deleting stuff from uint arrays by uint256 ID ✅
+    function deleteItemInUintArray(
+        uint256 _ItemID,
+        uint256[] storage _array
+    ) internal {
+        uint256 i = 0;
+        while (i < _array.length) {
+            if (_array[i] == _ItemID) {
+                _array[i] = _array[_array.length - 1];
+                _array.pop();
+                return;
+            }
+            i++;
         }
-        return _campaigns;
+        // Throw an error if the item was not found.
+        revert("Item not found");
     }
 
-    // Get campaign by ID ✅
-    function getCampaignByID(
-        uint256 _id
-    ) public view returns (Campaign memory) {
-        return campaigns[_id];
-    }
-
-    // Get campaign funders & contributions ❓(is this needed when we have getCampaignByID?)
-    function getFundingsOfCampaign(
-        uint256 _id
-    ) public view returns (Fundings[] memory) {
-        return campaigns[_id].fundings;
-    }
-
-    /// END OF CAMPAIGN READ FUNCTIONS
-    /// ***
-
-    /// ***
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// DEVELOPER FUNCTIONS (ONLY FOR TESTING) 🧑‍💻🧑‍💻🧑‍💻🧑‍💻🧑‍💻
     address public contractMaster;
 
@@ -1468,9 +1493,6 @@ contract StandardCampaign {
     }
 
     event Dispute(uint256 _id);
-
-    /// END OF DEVELOPER FUNCTIONS
-    /// ***
 
     receive() external payable {}
 

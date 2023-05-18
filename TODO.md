@@ -1,30 +1,23 @@
 # **P1**
 
-[-] EVERYTHING must be settled at every gate
 [-] Remove worker function _>func_
-[-] Locked funds entry in the campaign _!infra_
-[-] Campaign Worker Proposal _!infra_
-[-] Project Worker Proposal _!infra_
-[-] Worker enrollment _!infra_
-[-] Task submission _!infra_
-
-[-] function for assigning tasks to workers _>func_
 [-] refund worker stake when they leave, only doable in gate or closed _>func_
-[-] Application acceptance _>func_
+[-] Worker leave function conditional on gate stage _>func_
+[-] Acceptance/declining of submissions _>func_
+[-] Task submission _>func_
+[-] function for assigning tasks to workers _>func_
+
+[-] Locked funds entry in the campaign _!infra_
 [-] Project/Campaign Locked Funds _>func_
 [-] Locked funds _>func_
 [-] Project Worker Proposal _>func_
-[-] Acceptance/declining of submissions _>func_
-[x] fake ^Dispute with event _>func_
-[-] Worker enrollment _>func_
-[-] Worker leave function conditional on gate stage _>func_
-[-] Task submission _>func_
 [-] Task getSubmissions _>func_
 [-] Task Value Calculation _>func_
 
 # **P2**
 
-[-] Task reference in project _!infra_
+[-] Campaign Worker Proposal _!infra_
+[-] Project Worker Proposal _!infra_
 [-] Reopening campaign isn't possible.
 [-] Stake can only be recovered when campaignStatus is closed or campaignStyle made open.
 [-] Stake gets redistributed post-deadline if campaign isn't closed.
@@ -42,8 +35,11 @@
 
 # **Removed**
 
+[-] Task reference in project _!infra_
 [-] Make a "Worker" struct which contains a "IsWorking" entry.
 [-] Max workers slot (potentially in metadata if application required to join campaign).
+[-] cant be more workers than tasks in settled, applications refused if not enough tasks
+[-] ensure task creation keeps task deadlines within the project deadline
 
 # **Done**
 
@@ -66,3 +62,12 @@
 [x] Project status _!infra_
 [x] Project update status _>func_
 [x] Make stage/gate infra _>func_
+[x] reset fastforward array everytime we move status
+[x] check for deadline when going to settled and if past deadline then go to closed
+[x] EVERYTHING must be settled at every gate
+[x] Remove project deadlines, make no sense and are redundant and complexify everything
+[x] Worker enrollment _!infra_
+[x] Application acceptance _>func_
+[x] fake ^Dispute with event _>func_
+[x] Worker enrollment _>func_
+[x] Task submission _!infra_

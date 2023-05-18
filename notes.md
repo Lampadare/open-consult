@@ -1,6 +1,4 @@
 - finalise behaviour of decision tree for submission handling
 - make a function that allows the owner to remove workers from the project at gates
-- check for deadline when going to settled and if past deadline then go to closed
 - if adding tasks during settled, tasks can't be modified and deadline of task must be between stage start and gate start
-- reset fastforward array everytime we move status
 - make sure to release funds at right time for disputes to be logical
