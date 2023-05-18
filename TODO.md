@@ -1,8 +1,5 @@
 # **P1**
 
-[-] Remove worker function _>func_
-[-] refund worker stake when they leave, only doable in gate or closed _>func_
-[-] Worker leave function conditional on gate stage _>func_
 [-] Acceptance/declining of submissions _>func_
 [-] Task submission _>func_
 [-] function for assigning tasks to workers _>func_
@@ -21,6 +18,7 @@
 [-] Reopening campaign isn't possible.
 [-] Stake can only be recovered when campaignStatus is closed or campaignStyle made open.
 [-] Stake gets redistributed post-deadline if campaign isn't closed.
+[-] Ensure if worker applies twice, previous application gets replaced by new one
 
 # **P3**
 
@@ -71,3 +69,6 @@
 [x] fake ^Dispute with event _>func_
 [x] Worker enrollment _>func_
 [x] Task submission _!infra_
+[x] Remove worker function _>func_
+[x] refund worker stake when they leave, only doable in gate or settled or closed _>func_
+[x] worker leave function should only happen during gate or settled or closed. In stage, enrolStakes are locked and unrefundable

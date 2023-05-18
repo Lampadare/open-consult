@@ -3,7 +3,7 @@
 pragma solidity ^0.8.9;
 
 contract StandardCampaign {
-    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// STRUCTS DECLARATIONS
     struct Campaign {
         // Description of the campaign
@@ -167,7 +167,7 @@ contract StandardCampaign {
     // Within gate, maximum time to decide on submissions
     uint256 public taskDecisionTime = 1 days;
 
-    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// MODIFIERS
     // Timestamps
     modifier isFutureTimestamp(uint256 timestamp) {
@@ -373,7 +373,7 @@ contract StandardCampaign {
         _;
     }
 
-    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// CAMPAIGN WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new campaign, optionally fund it ✅
     function makeCampaign(
@@ -534,7 +534,7 @@ contract StandardCampaign {
         campaign.acceptors = _acceptors; //✅
     }
 
-    /// ⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// CAMPAIGN READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
     // Get all campaigns ✅
     function getAllCampaigns() public view returns (Campaign[] memory) {
@@ -559,7 +559,7 @@ contract StandardCampaign {
         return campaigns[_id].fundings;
     }
 
-    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// PROJECT WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new project ✅
     function makeProject(
@@ -897,7 +897,7 @@ contract StandardCampaign {
     function voteFastForwardStatus(
         uint256 _id,
         bool _vote
-    ) public lazyStatusUpdaterEnd(_id) {
+    ) public lazyStatusUpdaterStart(_id) lazyStatusUpdaterEnd(_id) {
         require(
             checkIsCampaignAcceptor(projects[_id].parentCampaign) ||
                 checkIsCampaignOwner(projects[_id].parentCampaign) ||
@@ -918,6 +918,117 @@ contract StandardCampaign {
 
         if (!voterFound) {
             project.fastForward.push(Vote(msg.sender, _vote));
+        }
+    }
+
+    // Worker drop out of project ✅
+    function workerDropOut(
+        uint256 _id
+    )
+        public
+        isProjectExisting(_id)
+        isProjectWorker(_id)
+        lazyStatusUpdaterStart(_id)
+    {
+        Project storage project = projects[_id];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+
+        // Ensure project status is not stage
+        require(
+            project.status != ProjectStatus.Stage,
+            "Project must currently be at gate or settled or closed"
+        );
+
+        // Remove worker from project
+        deleteItemInAddressArray(msg.sender, project.workers);
+        // Remove worker from campaign
+        deleteItemInPayableAddressArray(payable(msg.sender), campaign.workers);
+
+        // Add Worker to pastWorkers in project
+        project.pastWorkers.push(msg.sender);
+
+        // Refund stake
+        refundWorkerEnrolStake(_id, msg.sender);
+    }
+
+    // Remove worker from project by owner ✅
+    function fireWorker(
+        uint256 _id,
+        address _worker
+    )
+        public
+        isProjectExisting(_id)
+        isCampaignOwner(projects[_id].parentCampaign)
+        lazyStatusUpdaterStart(_id)
+    {
+        Project storage project = projects[_id];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+
+        // Ensure worker is on project
+        require(
+            checkIsProjectWorker(_id, _worker),
+            "Address must be a worker on the project"
+        );
+
+        // Ensure project status is not stage
+        require(
+            project.status != ProjectStatus.Stage,
+            "Project must currently be at gate or settled or closed"
+        );
+
+        // Remove worker from project
+        deleteItemInAddressArray(_worker, project.workers);
+        // Remove worker from campaign
+        deleteItemInPayableAddressArray(payable(_worker), campaign.workers);
+
+        // Add Worker to pastWorkers in project
+        project.pastWorkers.push(_worker);
+
+        // Refund stake
+        refundWorkerEnrolStake(_id, _worker);
+    }
+
+    // Internal function to refund worker enrol stake and delete appliction ✅
+    function refundWorkerEnrolStake(
+        uint256 _id,
+        address _worker
+    )
+        internal
+        isProjectExisting(_id)
+        isCampaignOwner(projects[_id].parentCampaign)
+        lazyStatusUpdaterStart(_id)
+    {
+        Project storage project = projects[_id];
+
+        // Ensure worker is on project
+        require(
+            checkIsProjectWorker(_id, _worker),
+            "Address must be a worker on the project"
+        );
+
+        // Ensure project status is not stage
+        require(
+            project.status != ProjectStatus.Stage,
+            "Project must currently be at gate or settled or closed"
+        );
+
+        // Refund stake
+        for (uint256 i = 0; i < project.applications.length; i++) {
+            // Find worker's application, ensure it was accepted and not refunded
+            if (
+                applications[project.applications[i]].applicant == _worker &&
+                !applications[project.applications[i]].enrolStake.refunded &&
+                applications[project.applications[i]].accepted
+            ) {
+                // Refund stake in application
+                applications[project.applications[i]]
+                    .enrolStake
+                    .refunded = true;
+                payable(_worker).transfer(
+                    applications[project.applications[i]].enrolStake.funding
+                );
+                deleteItemInUintArray(i, project.applications); //-> Get rid of refunded application
+            }
         }
     }
 
@@ -984,6 +1095,11 @@ contract StandardCampaign {
             "Project does not require applications"
         );
 
+        require(
+            !checkIsProjectWorker(_id),
+            "Sender must not already be a worker"
+        );
+
         Application storage application = applications[applicationCount];
         application.metadata = _metadata;
         application.applicant = msg.sender;
@@ -1033,11 +1149,11 @@ contract StandardCampaign {
             campaign.allTimeStakeholders.push(payable(application.applicant));
             campaign.workers.push(payable(application.applicant));
             application.accepted = true;
-            // deleteItemInUintArray(_applicationID, project.applications); maybe??
+            // deleteItemInUintArray(_applicationID, project.applications); maybe?? -> only on refund
         }
     }
 
-    /// ⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// PROJECT READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
 
     // Returns the status corresponding to our current timestamp ✅
@@ -1327,7 +1443,7 @@ contract StandardCampaign {
         return
             ownerVotes > 0 &&
             acceptorVotes > 0 &&
-            project.workers.length == workerVotes;
+            project.workers.length <= workerVotes;
     }
 
     // Check if sender is owner of campaign ✅
@@ -1411,7 +1527,7 @@ contract StandardCampaign {
         return isWorker;
     }
 
-    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// TASK WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new task
     function makeTask(
@@ -1444,10 +1560,10 @@ contract StandardCampaign {
         return taskCount - 1;
     }
 
-    /// ⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️⬛️
+    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// TASK READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
 
-    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// UTILITY FUNCTIONS
     // Returns maximum of two numbers ✅
     function max(uint a, uint b) internal pure returns (uint) {
@@ -1472,7 +1588,43 @@ contract StandardCampaign {
         revert("Item not found");
     }
 
-    /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
+    // Pattern for deleting stuff from address arrays by address ✅
+    function deleteItemInAddressArray(
+        address _ItemAddress,
+        address[] storage _array
+    ) internal {
+        uint256 i = 0;
+        while (i < _array.length) {
+            if (_array[i] == _ItemAddress) {
+                _array[i] = _array[_array.length - 1];
+                _array.pop();
+                return;
+            }
+            i++;
+        }
+        // Throw an error if the item was not found.
+        revert("Item not found");
+    }
+
+    // Pattern for deleting stuff from payable address arrays by address ✅
+    function deleteItemInPayableAddressArray(
+        address payable _ItemAddress,
+        address payable[] storage _array
+    ) internal {
+        uint256 i = 0;
+        while (i < _array.length) {
+            if (_array[i] == _ItemAddress) {
+                _array[i] = _array[_array.length - 1];
+                _array.pop();
+                return;
+            }
+            i++;
+        }
+        // Throw an error if the item was not found.
+        revert("Item not found");
+    }
+
+    /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// DEVELOPER FUNCTIONS (ONLY FOR TESTING) 🧑‍💻🧑‍💻🧑‍💻🧑‍💻🧑‍💻
     address public contractMaster;
 
