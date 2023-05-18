@@ -1,13 +1,9 @@
 # **P1**
 
-[-] Acceptance/declining of submissions _>func_
-[-] Task submission _>func_
 [-] function for assigning tasks to workers _>func_
 
-[-] Locked funds entry in the campaign _!infra_
 [-] Project/Campaign Locked Funds _>func_
 [-] Locked funds _>func_
-[-] Project Worker Proposal _>func_
 [-] Task getSubmissions _>func_
 [-] Task Value Calculation _>func_
 
@@ -19,6 +15,7 @@
 [-] Stake can only be recovered when campaignStatus is closed or campaignStyle made open.
 [-] Stake gets redistributed post-deadline if campaign isn't closed.
 [-] Ensure if worker applies twice, previous application gets replaced by new one
+[-] Project Worker Proposal _>func_
 
 # **P3**
 
@@ -72,3 +69,7 @@
 [x] Remove worker function _>func_
 [x] refund worker stake when they leave, only doable in gate or settled or closed _>func_
 [x] worker leave function should only happen during gate or settled or closed. In stage, enrolStakes are locked and unrefundable
+[x] Locked funds entry in the campaign _!infra_
+[x] make a function that allows the owner to remove workers from the project at gates or settled
+[x] Acceptance/declining of submissions _>func_
+[x] Task submission _>func_

@@ -12,7 +12,7 @@ contract StandardCampaign {
         CampaignStyle style;
         // Timestamps & status
         uint256 creationTime;
-        uint256 deadline;
+        //uint256 deadline;
         CampaignStatus status;
         // Stakeholders
         address payable creator;
@@ -150,7 +150,7 @@ contract StandardCampaign {
         None,
         Pending,
         Accepted,
-        Rejected
+        Declined
     }
 
     // Minimum stake required to create a Private campaign
@@ -165,7 +165,9 @@ contract StandardCampaign {
     // Minimum time to gate a project
     uint256 public minimumGateTime = 2 days;
     // Within gate, maximum time to decide on submissions
-    uint256 public taskDecisionTime = 1 days;
+    uint256 public taskSubmissionDecisionTime = 1 days;
+    // Within stage, maximum time to dispute a submission decision
+    uint256 public taskSubmissionDecisionDisputeTime = 2 days;
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// MODIFIERS
@@ -315,6 +317,16 @@ contract StandardCampaign {
         _;
     }
 
+    // Task Statuses
+    modifier isTaskClosed(uint256 _id) {
+        require(tasks[_id].closed, "Task must be closed");
+        _;
+    }
+    modifier isTaskNotClosed(uint256 _id) {
+        require(!tasks[_id].closed, "Task must not be closed");
+        _;
+    }
+
     // Lazy Project Status Updater
     modifier lazyStatusUpdaterStart(uint256 _id) {
         statusFixer(_id);
@@ -409,7 +421,7 @@ contract StandardCampaign {
         campaign.metadata = _metadata;
         campaign.style = _style;
         campaign.creationTime = block.timestamp;
-        campaign.deadline = _deadline;
+        //campaign.deadline = _deadline;
         campaign.status = CampaignStatus.Running;
         campaign.creator = payable(msg.sender);
         campaign.owners.push(payable(msg.sender));
@@ -528,7 +540,7 @@ contract StandardCampaign {
         campaign.title = _title; //✅
         campaign.metadata = _metadata; //✅
         //campaign.style = _style; //❌ (needs all private-to-open effects for transition)
-        campaign.deadline = _deadline; //⚠️ (can't be less than maximum settled time of current stage of contained projects)
+        //campaign.deadline = _deadline; //⚠️ (can't be less than maximum settled time of current stage of contained projects)
         campaign.status = _status; //⚠️ (can't be closed if there are open projects)
         campaign.owners = _owners; //✅
         campaign.acceptors = _acceptors; //✅
@@ -676,7 +688,7 @@ contract StandardCampaign {
         );
 
         // Pay submissions with no decisions
-        payLateUndecidedSubmissions(_id);
+        payLatePendingSubmissions(_id);
 
         // Get NotClosed tasks
         Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
@@ -721,6 +733,14 @@ contract StandardCampaign {
 
         // Clear fast forward votes
         delete project.fastForward;
+
+        // If campaign should be closed then update campaign status and project status
+        // if (
+        //     parentCampaign.deadline < project.nextMilestone.startStageTimestamp
+        // ) {
+        //     parentCampaign.status = CampaignStatus.Closed;
+        //     project.status = ProjectStatus.Closed;
+        // }
     }
 
     // Update project STATUS ✅
@@ -865,14 +885,15 @@ contract StandardCampaign {
         project.nextMilestone = _nextMilestone;
     }
 
-    // Automatically accept decisions which have received a submission and are past the decision time ✅
-    function payLateUndecidedSubmissions(uint256 _id) public {
+    // Automatically accept decisions which have not received a submission and are past the decision time ✅
+    function payLatePendingSubmissions(uint256 _id) public {
         Project storage project = projects[_id];
         Campaign storage campaign = campaigns[project.parentCampaign];
 
         require(
             block.timestamp >=
-                project.nextMilestone.startGateTimestamp + taskDecisionTime,
+                project.nextMilestone.startGateTimestamp +
+                    taskSubmissionDecisionTime,
             "Past end of max submission decision time, anyone can release funds of tasks missing decisions."
         );
 
@@ -1560,6 +1581,109 @@ contract StandardCampaign {
         return taskCount - 1;
     }
 
+    // Submit a submission to a task ✅
+    function submitSubmission(
+        uint256 _id,
+        string memory _metadata
+    )
+        public
+        isTaskExisting(_id)
+        isProjectExisting(tasks[_id].parentProject)
+        lazyStatusUpdaterStart(tasks[_id].parentProject)
+        isProjectRunning(tasks[_id].parentProject)
+        isWorkerOnTask(_id)
+        isTaskNotClosed(_id)
+        isProjectStage(tasks[_id].parentProject)
+    {
+        Task storage task = tasks[_id];
+        require(task.deadline > block.timestamp, "Task deadline has passed");
+
+        // Create submission, if it already exists, overwrite it
+        Submission storage submission = task.submission;
+        // Attach the IPFS hash for metadata
+        submission.metadata = _metadata;
+        // Submission status is pending after submission
+        submission.status = SubmissionStatus.Pending;
+    }
+
+    // Submission decision by acceptors ✅
+    function submissionDecision(
+        uint256 _id,
+        bool _accepted
+    )
+        public
+        isTaskExisting(_id)
+        isProjectExisting(tasks[_id].parentProject)
+        lazyStatusUpdaterStart(tasks[_id].parentProject)
+        isProjectRunning(tasks[_id].parentProject)
+        isCampaignAcceptor(projects[tasks[_id].parentProject].parentCampaign)
+        isTaskNotClosed(_id)
+        isProjectGate(tasks[_id].parentProject)
+    {
+        Project storage project = projects[tasks[_id].parentProject];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+        Task storage task = tasks[_id];
+        Submission storage submission = task.submission;
+
+        require(
+            block.timestamp <
+                project.nextMilestone.startGateTimestamp +
+                    taskSubmissionDecisionTime,
+            "Decision must happen during decision window"
+        );
+        require(
+            submission.status == SubmissionStatus.Pending,
+            "Submission must not already have decision"
+        );
+
+        // If decision is accepted, set submission status to accepted,
+        // payout worker, update locked rewards and close task
+        if (_accepted) {
+            submission.status = SubmissionStatus.Accepted;
+            task.paid = true;
+            task.closed = true;
+            task.worker.transfer(task.reward);
+            campaign.lockedRewards -= task.reward;
+        } else {
+            submission.status = SubmissionStatus.Declined;
+        }
+    }
+
+    // Raise a dispute on a declined submission ✅
+    // ⚠️ -> needs functionality behind it, currently just a placeholder
+    // funds locked in a dispute should be locked in the campaign until
+    // the dispute is resolved
+    function raiseDispute(
+        uint256 _id,
+        string memory _metadata
+    )
+        public
+        isTaskExisting(_id)
+        isProjectExisting(tasks[_id].parentProject)
+        lazyStatusUpdaterStart(tasks[_id].parentProject)
+        isProjectRunning(tasks[_id].parentProject)
+        isWorkerOnTask(_id)
+        isTaskNotClosed(_id)
+        isProjectGate(tasks[_id].parentProject)
+    {
+        Task storage task = tasks[_id];
+        Project storage project = projects[task.parentProject];
+        Submission storage submission = task.submission;
+
+        require(
+            submission.status == SubmissionStatus.Declined,
+            "Submission must be declined"
+        );
+        require(
+            block.timestamp <
+                project.nextMilestone.startGateTimestamp +
+                    taskSubmissionDecisionDisputeTime,
+            "Dispute must happen during dispute window"
+        );
+
+        dispute(_id, _metadata);
+    }
+
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// TASK READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
 
@@ -1640,11 +1764,14 @@ contract StandardCampaign {
         payable(msg.sender).transfer(address(this).balance);
     }
 
-    function dispute(uint256 _id) public isCampaignStakeholder(_id) {
-        emit Dispute(_id);
+    function dispute(
+        uint256 _id,
+        string memory _metadata
+    ) public isCampaignStakeholder(_id) {
+        emit Dispute(_id, _metadata);
     }
 
-    event Dispute(uint256 _id);
+    event Dispute(uint256 _id, string _metadata);
 
     receive() external payable {}
 
