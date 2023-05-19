@@ -1360,73 +1360,6 @@ contract StandardCampaign {
         return currentStatusValid && inSettledPeriod;
     }
 
-    // How many tasks match filter? helper function for getTasksOfProjectClosedFilter() below✅
-    function countTasksWithFilter(
-        uint256 _id,
-        TaskStatusFilter _statusFilter
-    ) internal view returns (uint256) {
-        uint256 taskCounter = 0;
-        uint256[] memory childTasks = projects[_id].childTasks;
-        for (uint256 i = 0; i < childTasks.length; i++) {
-            if (
-                _statusFilter == TaskStatusFilter.Closed &&
-                tasks[childTasks[i]].closed
-            ) {
-                taskCounter++;
-            } else if (
-                _statusFilter == TaskStatusFilter.NotClosed &&
-                !tasks[childTasks[i]].closed
-            ) {
-                taskCounter++;
-            } else if (_statusFilter == TaskStatusFilter.All) {
-                taskCounter++;
-            }
-        }
-        return taskCounter;
-    }
-
-    // Get tasks in a project based on Closed/NotClosed filter✅
-    function getTasksOfProjectClosedFilter(
-        uint256 _id,
-        TaskStatusFilter _statusFilter
-    ) public view returns (Task[] memory) {
-        Project memory parentProject = projects[_id];
-        if (_statusFilter == TaskStatusFilter.NotClosed) {
-            // Get uncompleted tasks
-            Task[] memory _tasks = new Task[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (!tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = tasks[parentProject.childTasks[i]];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else if (_statusFilter == TaskStatusFilter.Closed) {
-            // Get completed tasks
-            Task[] memory _tasks = new Task[](
-                countTasksWithFilter(_id, _statusFilter)
-            );
-            uint256 j = 0;
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                if (tasks[parentProject.childTasks[i]].closed) {
-                    _tasks[j] = tasks[parentProject.childTasks[i]];
-                    j++;
-                }
-            }
-            return _tasks;
-        } else {
-            // Get all tasks
-            Task[] memory _tasks = new Task[](parentProject.childTasks.length);
-            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
-                _tasks[i] = tasks[parentProject.childTasks[i]];
-            }
-            return _tasks;
-        }
-    }
-
     // Checks that voting conditions are met ✅
     function checkFastForwardStatus(uint256 _id) public view returns (bool) {
         Project storage project = projects[_id];
@@ -1548,21 +1481,42 @@ contract StandardCampaign {
         return isWorker;
     }
 
+    // Get the application of a worker on a project by their address ✅
+    function getApplicationByApplicant(
+        uint256 _id,
+        address _applicant
+    ) public view returns (Application memory application) {
+        Project storage project = projects[_id];
+        for (uint256 i = 0; i < project.applications.length; i++) {
+            if (applications[project.applications[i]].applicant == _applicant) {
+                return applications[project.applications[i]];
+            }
+        }
+    }
+
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// TASK WRITE FUNCTIONS 🔻🔻🔻🔻🔻🔻🔻🔻🔻🔻
     // Create a new task
     function makeTask(
         string memory _title,
         string memory _metadata,
+        uint256 weight,
         uint256 _deadline,
         uint256 _parentProjectID
-    ) public returns (uint256) {
+    )
+        public
+        isCampaignExisting(projects[_parentProjectID].parentCampaign)
+        isProjectExisting(_parentProjectID)
+        isCampaignOwner(projects[_parentProjectID].parentCampaign)
+        returns (uint256)
+    {
         require(_deadline > block.timestamp, "Deadline must be in the future");
 
         Task storage task = tasks[taskCount];
 
         task.title = _title;
         task.metadata = _metadata;
+        task.weight = weight;
         task.creationTime = block.timestamp;
         task.deadline = _deadline;
         task.closed = false;
@@ -1570,11 +1524,6 @@ contract StandardCampaign {
         // Add parent project to task and vice versa
         task.parentProject = _parentProjectID;
         projects[_parentProjectID].childTasks.push(taskCount);
-
-        // If this is the only task in the project, give it maximum weight of 1000
-        if ((projects[_parentProjectID].childTasks.length) == 0) {
-            task.weight = 1000;
-        }
 
         taskCount++;
 
@@ -1649,6 +1598,54 @@ contract StandardCampaign {
         }
     }
 
+    // Assign a worker to a task ✅
+    function workerSelfAssignsTask(
+        uint256 _id
+    )
+        public
+        isTaskExisting(_id)
+        isProjectExisting(tasks[_id].parentProject)
+        lazyStatusUpdaterStart(tasks[_id].parentProject)
+        isProjectRunning(tasks[_id].parentProject)
+        isProjectWorker(tasks[_id].parentProject)
+        isTaskNotClosed(_id)
+    {
+        Task storage task = tasks[_id];
+        Project storage project = projects[task.parentProject];
+
+        require(
+            project.status == ProjectStatus.Settled,
+            "Project must be settled"
+        );
+
+        require(
+            !checkIsProjectWorker(_id, msg.sender),
+            "Worker must not already be on task"
+        );
+
+        // If stake by sender is strictly superior than stake of current worker on task
+        // then remove current worker from task and assign sender to task
+        if (task.worker != address(0)) {
+            if (
+                getApplicationByApplicant(_id, task.worker).enrolStake.funding <
+                getApplicationByApplicant(_id, msg.sender).enrolStake.funding
+            ) {
+                // Remove worker from task
+                task.worker = payable(address(0));
+                // Assign sender to task
+                task.worker = payable(msg.sender);
+                return;
+            } else {
+                revert(
+                    "Stake must be superior to current worker's stake to replace them"
+                );
+            }
+        } else {
+            // Assign sender to task
+            task.worker = payable(msg.sender);
+        }
+    }
+
     // Raise a dispute on a declined submission ✅
     // ⚠️ -> needs functionality behind it, currently just a placeholder
     // funds locked in a dispute should be locked in the campaign until
@@ -1686,6 +1683,73 @@ contract StandardCampaign {
 
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
     /// TASK READ FUNCTIONS 🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹
+
+    // How many tasks match filter? helper function for getTasksOfProjectClosedFilter() below✅
+    function countTasksWithFilter(
+        uint256 _id,
+        TaskStatusFilter _statusFilter
+    ) internal view returns (uint256) {
+        uint256 taskCounter = 0;
+        uint256[] memory childTasks = projects[_id].childTasks;
+        for (uint256 i = 0; i < childTasks.length; i++) {
+            if (
+                _statusFilter == TaskStatusFilter.Closed &&
+                tasks[childTasks[i]].closed
+            ) {
+                taskCounter++;
+            } else if (
+                _statusFilter == TaskStatusFilter.NotClosed &&
+                !tasks[childTasks[i]].closed
+            ) {
+                taskCounter++;
+            } else if (_statusFilter == TaskStatusFilter.All) {
+                taskCounter++;
+            }
+        }
+        return taskCounter;
+    }
+
+    // Get tasks in a project based on Closed/NotClosed filter✅
+    function getTasksOfProjectClosedFilter(
+        uint256 _id,
+        TaskStatusFilter _statusFilter
+    ) public view returns (Task[] memory) {
+        Project memory parentProject = projects[_id];
+        if (_statusFilter == TaskStatusFilter.NotClosed) {
+            // Get uncompleted tasks
+            Task[] memory _tasks = new Task[](
+                countTasksWithFilter(_id, _statusFilter)
+            );
+            uint256 j = 0;
+            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
+                if (!tasks[parentProject.childTasks[i]].closed) {
+                    _tasks[j] = tasks[parentProject.childTasks[i]];
+                    j++;
+                }
+            }
+            return _tasks;
+        } else if (_statusFilter == TaskStatusFilter.Closed) {
+            // Get completed tasks
+            Task[] memory _tasks = new Task[](
+                countTasksWithFilter(_id, _statusFilter)
+            );
+            uint256 j = 0;
+            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
+                if (tasks[parentProject.childTasks[i]].closed) {
+                    _tasks[j] = tasks[parentProject.childTasks[i]];
+                    j++;
+                }
+            }
+            return _tasks;
+        } else {
+            // Get all tasks
+            Task[] memory _tasks = new Task[](parentProject.childTasks.length);
+            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
+                _tasks[i] = tasks[parentProject.childTasks[i]];
+            }
+            return _tasks;
+        }
+    }
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
     /// UTILITY FUNCTIONS

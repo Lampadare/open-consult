@@ -1,7 +1,5 @@
 # **P1**
 
-[-] function for assigning tasks to workers _>func_
-
 [-] Project/Campaign Locked Funds _>func_
 [-] Locked funds _>func_
 [-] Task getSubmissions _>func_
@@ -73,3 +71,5 @@
 [x] make a function that allows the owner to remove workers from the project at gates or settled
 [x] Acceptance/declining of submissions _>func_
 [x] Task submission _>func_
+[x] assigning worker to task should be done in settled period
+[x] function for assigning tasks to workers _>func_
