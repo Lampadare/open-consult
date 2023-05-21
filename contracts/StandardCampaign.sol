@@ -437,15 +437,17 @@ contract StandardCampaign {
             campaign.allTimeStakeholders.push((_acceptors[i]));
         }
         campaign.allTimeStakeholders.push(payable(msg.sender));
-        campaign.stake.funding = _stake;
         campaign.stake.funder = payable(msg.sender);
-        campaign.stake.refunded = false;
+        campaign.stake.funding = _stake;
+        campaign.stake.amountUsed = 0;
+        campaign.stake.fullyRefunded = false;
 
         if (_funding > 0) {
             Fundings memory newFunding;
             newFunding.funder = payable(msg.sender);
             newFunding.funding = _funding;
-            newFunding.refunded = false;
+            campaign.stake.amountUsed = 0;
+            newFunding.fullyRefunded = false;
             campaign.fundings.push(newFunding);
         }
 
@@ -461,13 +463,14 @@ contract StandardCampaign {
         Fundings memory newFunding;
         newFunding.funder = payable(msg.sender);
         newFunding.funding = _funding;
-        newFunding.refunded = false;
+        newFunding.amountUsed = 0;
+        newFunding.fullyRefunded = false;
 
         Campaign storage campaign = campaigns[_id];
         campaign.fundings.push(newFunding);
     }
 
-    // Refund campaign funding ⚠️ (needs checking for locked funds!!!)
+    // Refund campaign funding ⚠️⚠️⚠️⚠️⚠️ (needs checking for locked funds!!!)
     function refundCampaignFunding(
         uint256 _id,
         bool _drainCampaign
@@ -479,8 +482,11 @@ contract StandardCampaign {
         for (uint256 i = 0; i < campaign.fundings.length; i++) {
             Fundings storage funding = campaign.fundings[i];
 
-            if (funding.funder == msg.sender && funding.refunded == false) {
-                funding.refunded = true;
+            if (
+                funding.funder == msg.sender && funding.fullyRefunded == false
+            ) {
+                funding.amountUsed = funding.funding;
+                funding.fullyRefunded = true;
                 payable(msg.sender).transfer(funding.funding);
             }
         }
@@ -496,10 +502,11 @@ contract StandardCampaign {
         isCampaignCreator(_id)
     {
         Campaign storage campaign = campaigns[_id];
-        require(!campaign.stake.refunded, "Stake already refunded");
+        require(!campaign.stake.fullyRefunded, "Stake already refunded");
 
         uint256 stake = campaign.stake.funding;
-        campaign.stake.refunded = true;
+        campaign.stake.amountUsed = stake;
+        campaign.stake.fullyRefunded = true;
         campaign.creator.transfer(stake);
     }
 
@@ -708,16 +715,16 @@ contract StandardCampaign {
         );
 
         // Get NotClosed tasks
-        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+        uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
             _id,
             TaskStatusFilter.NotClosed
         );
 
         // Get latest task deadline
         uint256 latestTaskDeadline = 0;
-        for (uint256 i = 0; i < project.childTasks.length; i++) {
-            if (notClosedTasks[i].deadline > latestTaskDeadline) {
-                latestTaskDeadline = notClosedTasks[i].deadline;
+        for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
+            if (tasks[notClosedTaskIds[i]].deadline > latestTaskDeadline) {
+                latestTaskDeadline = tasks[notClosedTaskIds[i]].deadline;
             }
         }
 
@@ -733,15 +740,15 @@ contract StandardCampaign {
         // If task deadline is before timestamp of stage start and uncompleted
         // then update deadline of task to be max of stage start and latest task deadline
         // At this point, all deadlines should be between stage start and gate start
-        for (uint256 i = 0; i < notClosedTasks.length; i++) {
+        for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
             // Clear workers of unclosed tasks when going settled
-            notClosedTasks[i].worker = payable(address(0));
+            tasks[notClosedTaskIds[i]].worker = payable(address(0));
             // If task deadline is before timestamp of stage start and uncompleted
             if (
-                notClosedTasks[i].deadline <
+                tasks[notClosedTaskIds[i]].deadline <
                 project.nextMilestone.startStageTimestamp
             ) {
-                notClosedTasks[i].deadline = max(
+                tasks[notClosedTaskIds[i]].deadline = max(
                     project.nextMilestone.startGateTimestamp - 1 seconds,
                     latestTaskDeadline
                 );
@@ -855,15 +862,15 @@ contract StandardCampaign {
                 project.nextMilestone.startStageTimestamp;
         }
 
-        // Get NotClosed tasks
-        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+        // Get NotClosed task IDs
+        uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
             _id,
             TaskStatusFilter.NotClosed
         );
 
         // Add lateness to all tasks
-        for (uint256 i = 0; i < notClosedTasks.length; i++) {
-            notClosedTasks[i].deadline += lateness; // add lateness to deadline
+        for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
+            tasks[notClosedTaskIds[i]].deadline += lateness; // add lateness to deadline
         }
 
         // add lateness to nextmilestone
@@ -1018,19 +1025,21 @@ contract StandardCampaign {
 
         // Refund stake
         for (uint256 i = 0; i < project.applications.length; i++) {
+            Application storage application = applications[
+                project.applications[i]
+            ];
             // Find worker's application, ensure it was accepted and not refunded
             if (
-                applications[project.applications[i]].applicant == _worker &&
-                !applications[project.applications[i]].enrolStake.refunded &&
-                applications[project.applications[i]].accepted
+                application.applicant == _worker &&
+                !application.enrolStake.fullyRefunded &&
+                application.accepted
             ) {
                 // Refund stake in application
-                applications[project.applications[i]]
+                application.enrolStake.amountUsed = application
                     .enrolStake
-                    .refunded = true;
-                payable(_worker).transfer(
-                    applications[project.applications[i]].enrolStake.funding
-                );
+                    .funding;
+                application.enrolStake.fullyRefunded = true;
+                payable(_worker).transfer(application.enrolStake.funding);
                 deleteItemInUintArray(i, project.applications); //-> Get rid of refunded application
             }
         }
@@ -1066,7 +1075,8 @@ contract StandardCampaign {
         application.accepted = true;
         application.enrolStake.funder = payable(msg.sender);
         application.enrolStake.funding = _stake;
-        application.enrolStake.refunded = false;
+        application.enrolStake.amountUsed = 0;
+        application.enrolStake.fullyRefunded = false;
         application.parentProject = _id;
 
         project.applications.push(applicationCount);
@@ -1111,7 +1121,8 @@ contract StandardCampaign {
         application.accepted = false;
         application.enrolStake.funder = payable(msg.sender);
         application.enrolStake.funding = _stake;
-        application.enrolStake.refunded = false;
+        application.enrolStake.amountUsed = 0;
+        application.enrolStake.fullyRefunded = false;
         application.parentProject = _id;
 
         project.applications.push(applicationCount);
@@ -1143,7 +1154,10 @@ contract StandardCampaign {
             !_accepted
         ) {
             applications[_applicationID].accepted = false;
-            applications[_applicationID].enrolStake.refunded = true;
+            applications[_applicationID].enrolStake.amountUsed = application
+                .enrolStake
+                .funding;
+            applications[_applicationID].enrolStake.fullyRefunded = true;
             deleteItemInUintArray(_applicationID, project.applications);
             payable(msg.sender).transfer(
                 applications[_applicationID].enrolStake.funding
@@ -1207,8 +1221,7 @@ contract StandardCampaign {
             }
         }
 
-        // Get NotClosed tasks
-        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+        uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
             _id,
             TaskStatusFilter.NotClosed
         );
@@ -1216,14 +1229,13 @@ contract StandardCampaign {
         // Updating tasks requires reward conditions to be met
         if (updateProjectRewardsConditions(_id)) {
             // Compute the reward for each task at this level)
-            for (uint256 i = 0; i < notClosedTasks.length; i++) {
-                uint256 taskId = notClosedTasks[i];
-                Task storage task = tasks[taskId];
-
+            for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
                 // Compute the reward based on the task's weight and the total weight
-                uint256 taskReward = (thisProjectReward * task.weight) / 1000;
-                // Update the task reward
-                task.reward = taskReward;
+                uint256 taskReward = (thisProjectReward *
+                    tasks[notClosedTaskIds[i]].weight) / 1000;
+
+                // Update the task reward in storage
+                tasks[notClosedTaskIds[i]].reward = taskReward;
             }
         }
 
@@ -1700,33 +1712,30 @@ contract StandardCampaign {
         }
 
         // Get NotClosed tasks
-        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+        uint256[] memory notClosedTaskIds = getTaskIdsOfProjectClosedFilter(
             _id,
             TaskStatusFilter.NotClosed
         );
 
-        for (uint256 i = 0; i < notClosedTasks.length; i++) {
-            if (
-                notClosedTasks[i].submission.status == SubmissionStatus.Pending
-            ) {
-                notClosedTasks[i].submission.status ==
-                    SubmissionStatus.Accepted;
-                notClosedTasks[i].closed == true;
-                notClosedTasks[i].paid == true;
-                notClosedTasks[i].worker.transfer(notClosedTasks[i].reward);
-                campaign.lockedRewards -= notClosedTasks[i].reward;
+        for (uint256 i = 0; i < notClosedTaskIds.length; i++) {
+            Task storage task = tasks[notClosedTaskIds[i]];
+            if (task.submission.status == SubmissionStatus.Pending) {
+                task.submission.status = SubmissionStatus.Accepted;
+                task.closed = true;
+                task.paid = true;
+                task.worker.transfer(task.reward);
+                campaign.lockedRewards -= task.reward;
             }
 
             if (
-                notClosedTasks[i].submission.status ==
-                SubmissionStatus.Declined &&
+                task.submission.status == SubmissionStatus.Declined &&
                 block.timestamp >=
                 project.nextMilestone.startGateTimestamp +
                     taskSubmissionDecisionDisputeTime
             ) {
-                notClosedTasks[i].closed == true;
-                notClosedTasks[i].paid == false;
-                campaign.lockedRewards -= notClosedTasks[i].reward;
+                task.closed = true;
+                task.paid = false;
+                campaign.lockedRewards -= task.reward;
             }
         }
     }
@@ -1883,6 +1892,50 @@ contract StandardCampaign {
             Task[] memory _tasks = new Task[](parentProject.childTasks.length);
             for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
                 _tasks[i] = tasks[parentProject.childTasks[i]];
+            }
+            return _tasks;
+        }
+    }
+
+    // Get task IDs in a project based on Closed/NotClosed filter✅
+    function getTaskIdsOfProjectClosedFilter(
+        uint256 _id,
+        TaskStatusFilter _statusFilter
+    ) public view returns (uint256[] memory) {
+        Project memory parentProject = projects[_id];
+        if (_statusFilter == TaskStatusFilter.NotClosed) {
+            // Get uncompleted tasks
+            uint256[] memory _tasks = new uint256[](
+                countTasksWithFilter(_id, _statusFilter)
+            );
+            uint256 j = 0;
+            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
+                if (!tasks[parentProject.childTasks[i]].closed) {
+                    _tasks[j] = parentProject.childTasks[i];
+                    j++;
+                }
+            }
+            return _tasks;
+        } else if (_statusFilter == TaskStatusFilter.Closed) {
+            // Get completed tasks
+            uint256[] memory _tasks = new uint256[](
+                countTasksWithFilter(_id, _statusFilter)
+            );
+            uint256 j = 0;
+            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
+                if (tasks[parentProject.childTasks[i]].closed) {
+                    _tasks[j] = parentProject.childTasks[i];
+                    j++;
+                }
+            }
+            return _tasks;
+        } else {
+            // Get all tasks
+            uint256[] memory _tasks = new uint256[](
+                parentProject.childTasks.length
+            );
+            for (uint256 i = 0; i < parentProject.childTasks.length; i++) {
+                _tasks[i] = parentProject.childTasks[i];
             }
             return _tasks;
         }

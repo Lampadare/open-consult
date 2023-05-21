@@ -82,3 +82,4 @@
 [x] update reward calculations at every settled
 [x] can't update task rewards while someone is working on it
 [x] clear unclosed task workers when going to settled
+[x] fix memory vs storage issues
