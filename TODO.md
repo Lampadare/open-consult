@@ -3,7 +3,6 @@
 [-] Project/Campaign Locked Funds _>func_
 [-] Locked funds _>func_
 [-] Task getSubmissions _>func_
-[-] Task Value Calculation _>func_
 
 # **P2**
 
@@ -12,8 +11,8 @@
 [-] Reopening campaign isn't possible.
 [-] Stake can only be recovered when campaignStatus is closed or campaignStyle made open.
 [-] Stake gets redistributed post-deadline if campaign isn't closed.
-[-] Ensure if worker applies twice, previous application gets replaced by new one
 [-] Project Worker Proposal _>func_
+[-] deadline logic! -> only check for past deadline when about to settle or close and if past campaign deadline, close project
 
 # **P3**
 
@@ -73,3 +72,13 @@
 [x] Task submission _>func_
 [x] assigning worker to task should be done in settled period
 [x] function for assigning tasks to workers _>func_
+[x] finalise behaviour of decision tree for submission handling
+[x] Ensure if worker applies twice, previous application gets replaced by new one
+[x] if adding tasks during settled, tasks can't be modified and deadline of task must be between stage start and gate start
+[x] cleanup pending tasks and compute rewards need to be internal so they are never called in the wrong order
+[x] functions called within the fixStatus pipeline cannot have lazyUpdater as modifier
+[x] add lazyupdaters where needed
+[x] calculate rewards when coming out of decision time/ going into settled
+[x] update reward calculations at every settled
+[x] can't update task rewards while someone is working on it
+[x] clear unclosed task workers when going to settled

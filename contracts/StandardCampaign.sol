@@ -40,6 +40,7 @@ contract StandardCampaign {
         string metadata;
         // Contribution weight
         uint256 weight;
+        uint256 reward;
         // Timestamps
         uint256 creationTime;
         Vote[] fastForward;
@@ -108,7 +109,8 @@ contract StandardCampaign {
     struct Fundings {
         address payable funder; // The address of the individual who contributed
         uint256 funding; // The amount of tokens the user contributed
-        bool refunded; // A boolean storing whether or not the contribution has been refunded yet
+        uint256 amountUsed; // The amount of tokens that have been used, refunded or locked
+        bool fullyRefunded; // A boolean storing whether or not the contribution has been fully refunded yet
     }
 
     struct NextMilestone {
@@ -150,7 +152,8 @@ contract StandardCampaign {
         None,
         Pending,
         Accepted,
-        Declined
+        Declined,
+        Disputed
     }
 
     // Minimum stake required to create a Private campaign
@@ -163,10 +166,10 @@ contract StandardCampaign {
     // Minimum time to settle a project
     uint256 public minimumSettledTime = 1 days;
     // Minimum time to gate a project
-    uint256 public minimumGateTime = 2 days;
+    uint256 public minimumGateTime = 2.5 days;
     // Within gate, maximum time to decide on submissions
     uint256 public taskSubmissionDecisionTime = 1 days;
-    // Within stage, maximum time to dispute a submission decision
+    // Within stage, maximum time to dispute a submission decision (encompasses taskSubmissionDecisionTime)
     uint256 public taskSubmissionDecisionDisputeTime = 2 days;
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
@@ -564,11 +567,27 @@ contract StandardCampaign {
         return campaigns[_id];
     }
 
-    // Get campaign funders & contributions ❓(is this needed when we have getCampaignByID?)
+    // Get campaign Fundings struct array ✅
     function getFundingsOfCampaign(
         uint256 _id
     ) public view returns (Fundings[] memory) {
         return campaigns[_id].fundings;
+    }
+
+    // Get the balance of a campaign ✅
+    function getCampaignBalance(
+        uint256 _id
+    ) public view isCampaignExisting(_id) returns (uint256) {
+        Campaign memory campaign = campaigns[_id];
+        uint256 totalBalance = 0;
+        for (uint256 i = 0; i < campaign.fundings.length; i++) {
+            if (!campaign.fundings[i].fullyRefunded) {
+                uint256 balanceOfFundingStruct = campaign.fundings[i].funding -
+                    campaign.fundings[i].amountUsed;
+                totalBalance += balanceOfFundingStruct;
+            }
+        }
+        return totalBalance;
     }
 
     /// ⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️⬜️
@@ -667,6 +686,7 @@ contract StandardCampaign {
         public
         isProjectExisting(_id)
         isCampaignRunning(projects[_id].parentCampaign)
+        lazyStatusUpdaterStart(_id)
         isProjectRunning(_id)
         isProjectGate(_id)
     {
@@ -686,9 +706,6 @@ contract StandardCampaign {
                 _nextGateStartTimestamp > _nextStageStartTimestamp,
             "_nextGateStartTimestamp must be after _nextStageStartTimestamp"
         );
-
-        // Pay submissions with no decisions
-        payLatePendingSubmissions(_id);
 
         // Get NotClosed tasks
         Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
@@ -717,6 +734,9 @@ contract StandardCampaign {
         // then update deadline of task to be max of stage start and latest task deadline
         // At this point, all deadlines should be between stage start and gate start
         for (uint256 i = 0; i < notClosedTasks.length; i++) {
+            // Clear workers of unclosed tasks when going settled
+            notClosedTasks[i].worker = payable(address(0));
+            // If task deadline is before timestamp of stage start and uncompleted
             if (
                 notClosedTasks[i].deadline <
                 project.nextMilestone.startStageTimestamp
@@ -733,21 +753,13 @@ contract StandardCampaign {
 
         // Clear fast forward votes
         delete project.fastForward;
-
-        // If campaign should be closed then update campaign status and project status
-        // if (
-        //     parentCampaign.deadline < project.nextMilestone.startStageTimestamp
-        // ) {
-        //     parentCampaign.status = CampaignStatus.Closed;
-        //     project.status = ProjectStatus.Closed;
-        // }
     }
 
     // Update project STATUS ✅
     function updateProjectStatus(
         uint256 _id
     )
-        public
+        internal
         isProjectExisting(_id)
         isProjectRunning(_id)
         isCampaignRunning(projects[_id].parentCampaign)
@@ -803,8 +815,7 @@ contract StandardCampaign {
         // Otherwise, do nothing
         if (shouldBeStatus == project.status && checkFastForwardStatus(_id)) {
             updateProjectStatus(_id);
-        } else {
-            return;
+            computeAllRewardsInCampaign(project.parentCampaign);
         }
 
         // If we should be in settled but are in gate, then return
@@ -813,6 +824,7 @@ contract StandardCampaign {
             shouldBeStatus == ProjectStatus.Settled &&
             project.status == ProjectStatus.Gate
         ) {
+            computeAllRewardsInCampaign(project.parentCampaign);
             return;
         } else {
             // Iterate until we get to where we should be
@@ -820,6 +832,7 @@ contract StandardCampaign {
                 updateProjectStatus(_id);
                 shouldBeStatus = whatStatusProjectShouldBeAt(_id);
             }
+            computeAllRewardsInCampaign(project.parentCampaign);
         }
     }
 
@@ -885,40 +898,11 @@ contract StandardCampaign {
         project.nextMilestone = _nextMilestone;
     }
 
-    // Automatically accept decisions which have not received a submission and are past the decision time ✅
-    function payLatePendingSubmissions(uint256 _id) public {
-        Project storage project = projects[_id];
-        Campaign storage campaign = campaigns[project.parentCampaign];
-
-        require(
-            block.timestamp >=
-                project.nextMilestone.startGateTimestamp +
-                    taskSubmissionDecisionTime,
-            "Past end of max submission decision time, anyone can release funds of tasks missing decisions."
-        );
-
-        for (uint256 i = 0; i < project.childTasks.length; i++) {
-            if (
-                tasks[project.childTasks[i]].submission.status ==
-                SubmissionStatus.Pending
-            ) {
-                tasks[project.childTasks[i]].submission.status ==
-                    SubmissionStatus.Accepted;
-                tasks[project.childTasks[i]].closed == true;
-                tasks[project.childTasks[i]].paid == true;
-                tasks[project.childTasks[i]].worker.transfer(
-                    tasks[project.childTasks[i]].reward
-                );
-                campaign.lockedRewards -= tasks[project.childTasks[i]].reward;
-            }
-        }
-    }
-
     // If sender is owner, acceptor or worker, append vote to fast forward status ✅
     function voteFastForwardStatus(
         uint256 _id,
         bool _vote
-    ) public lazyStatusUpdaterStart(_id) lazyStatusUpdaterEnd(_id) {
+    ) public lazyStatusUpdaterStart(_id) {
         require(
             checkIsCampaignAcceptor(projects[_id].parentCampaign) ||
                 checkIsCampaignOwner(projects[_id].parentCampaign) ||
@@ -1017,7 +1001,6 @@ contract StandardCampaign {
         internal
         isProjectExisting(_id)
         isCampaignOwner(projects[_id].parentCampaign)
-        lazyStatusUpdaterStart(_id)
     {
         Project storage project = projects[_id];
 
@@ -1060,12 +1043,12 @@ contract StandardCampaign {
     )
         public
         payable
-        isCampaignRunning(projects[_id].parentCampaign)
         isProjectExisting(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
+        lazyStatusUpdaterStart(_id)
         isProjectRunning(_id)
         isMoneyIntended(_stake)
         isMoreThanEnrolStake(_stake)
-        lazyStatusUpdaterEnd(_id)
     {
         Project storage project = projects[_id];
         Campaign storage campaign = campaigns[project.parentCampaign];
@@ -1102,12 +1085,13 @@ contract StandardCampaign {
     )
         public
         payable
-        isCampaignRunning(projects[_id].parentCampaign)
+        isCampaignExisting(projects[_id].parentCampaign)
         isProjectExisting(_id)
+        lazyStatusUpdaterStart(_id)
+        isCampaignRunning(projects[_id].parentCampaign)
         isProjectRunning(_id)
         isMoneyIntended(_stake)
         isMoreThanEnrolStake(_stake)
-        lazyStatusUpdaterEnd(_id)
         returns (uint256)
     {
         Project storage project = projects[_id];
@@ -1142,11 +1126,11 @@ contract StandardCampaign {
     )
         public
         isProjectExisting(applications[_applicationID].parentProject)
+        lazyStatusUpdaterStart(applications[_applicationID].parentProject)
         isCampaignAcceptor(
             projects[applications[_applicationID].parentProject].parentCampaign
         )
         isApplicationExisting(_applicationID)
-        lazyStatusUpdaterEnd(applications[_applicationID].parentProject)
     {
         Application storage application = applications[_applicationID];
         Project storage project = projects[application.parentProject];
@@ -1172,6 +1156,107 @@ contract StandardCampaign {
             application.accepted = true;
             // deleteItemInUintArray(_applicationID, project.applications); maybe?? -> only on refund
         }
+    }
+
+    // Compute rewards for all projects and tasks in a campaign ✅
+    function computeAllRewardsInCampaign(
+        uint256 _id
+    ) public isCampaignExisting(_id) isCampaignRunning(_id) {
+        // Get the campaign
+        Campaign storage campaign = campaigns[_id];
+
+        // Current campaign balance
+        uint256 campaignBalance = getCampaignBalance(_id);
+
+        // Loop over all direct projects in the campaign
+        for (uint256 i = 0; i < campaign.directChildProjects.length; i++) {
+            uint256 projectId = campaign.directChildProjects[i];
+
+            // Compute rewards for the project and its tasks recursively
+            computeProjectRewards(projectId, campaignBalance);
+        }
+    }
+
+    // Compute rewards for all projects and tasks in a campaign helper function ✅
+    function computeProjectRewards(
+        uint256 _id,
+        uint256 _fundsAtThatLevel
+    ) internal isProjectExisting(_id) {
+        Project storage project = projects[_id];
+        uint256 thisProjectReward;
+
+        if (project.status == ProjectStatus.Closed) {
+            return;
+        }
+
+        cleanUpNotClosedTasks(_id);
+
+        // If the project is top level project
+        if (project.parentProject == _id) {
+            // Compute the reward for the project at this level
+            thisProjectReward = (_fundsAtThatLevel * project.weight) / 1000;
+            // If the project fulfills conditions, then actually update the reward
+            if (updateProjectRewardsConditions(_id)) {
+                project.reward = thisProjectReward;
+            }
+        } else {
+            // If the project is not a top level project take the reward
+            // given from the parent project computation
+            if (updateProjectRewardsConditions(_id)) {
+                project.reward = _fundsAtThatLevel;
+            }
+        }
+
+        // Get NotClosed tasks
+        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+            _id,
+            TaskStatusFilter.NotClosed
+        );
+
+        // Updating tasks requires reward conditions to be met
+        if (updateProjectRewardsConditions(_id)) {
+            // Compute the reward for each task at this level)
+            for (uint256 i = 0; i < notClosedTasks.length; i++) {
+                uint256 taskId = notClosedTasks[i];
+                Task storage task = tasks[taskId];
+
+                // Compute the reward based on the task's weight and the total weight
+                uint256 taskReward = (thisProjectReward * task.weight) / 1000;
+                // Update the task reward
+                task.reward = taskReward;
+            }
+        }
+
+        // Compute the rewards for child projects
+        for (uint256 i = 0; i < project.childProjects.length; i++) {
+            uint256 childProjectId = project.childProjects[i];
+            Project storage childProject = projects[childProjectId];
+
+            // If project is NOT closed, then compute rewards
+            if (childProject.status != ProjectStatus.Closed) {
+                // Calculate rewards for the child project
+                uint256 childProjectReward = (thisProjectReward *
+                    childProject.weight) / 1000;
+                // Compute rewards for the child project and its tasks recursively
+                computeProjectRewards(childProjectId, childProjectReward);
+            }
+        }
+    }
+
+    // Check if project can update the rewards ✅
+    function updateProjectRewardsConditions(
+        uint256 _id
+    ) public view returns (bool) {
+        Project storage project = projects[_id];
+
+        bool atGate = project.status == ProjectStatus.Gate ||
+            project.status == ProjectStatus.Closed;
+        bool afterCleanup = block.timestamp >
+            project.nextMilestone.startGateTimestamp +
+                taskSubmissionDecisionDisputeTime;
+
+        // Ensure all conditions are met
+        return atGate && afterCleanup;
     }
 
     /// 🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳🔳
@@ -1598,6 +1683,54 @@ contract StandardCampaign {
         }
     }
 
+    // Automatically accept decisions which have not received a submission and are past the decision time ✅
+    // Also automatically close tasks which have received declined submissions
+    // and weren't disputed within the dispute time
+    function cleanUpNotClosedTasks(uint256 _id) internal {
+        Project storage project = projects[_id];
+        Campaign storage campaign = campaigns[project.parentCampaign];
+
+        // Past the decision time for submissions anyone can trigger the cleanup
+        if (
+            block.timestamp <=
+            project.nextMilestone.startGateTimestamp +
+                taskSubmissionDecisionTime
+        ) {
+            return;
+        }
+
+        // Get NotClosed tasks
+        Task[] memory notClosedTasks = getTasksOfProjectClosedFilter(
+            _id,
+            TaskStatusFilter.NotClosed
+        );
+
+        for (uint256 i = 0; i < notClosedTasks.length; i++) {
+            if (
+                notClosedTasks[i].submission.status == SubmissionStatus.Pending
+            ) {
+                notClosedTasks[i].submission.status ==
+                    SubmissionStatus.Accepted;
+                notClosedTasks[i].closed == true;
+                notClosedTasks[i].paid == true;
+                notClosedTasks[i].worker.transfer(notClosedTasks[i].reward);
+                campaign.lockedRewards -= notClosedTasks[i].reward;
+            }
+
+            if (
+                notClosedTasks[i].submission.status ==
+                SubmissionStatus.Declined &&
+                block.timestamp >=
+                project.nextMilestone.startGateTimestamp +
+                    taskSubmissionDecisionDisputeTime
+            ) {
+                notClosedTasks[i].closed == true;
+                notClosedTasks[i].paid == false;
+                campaign.lockedRewards -= notClosedTasks[i].reward;
+            }
+        }
+    }
+
     // Assign a worker to a task ✅
     function workerSelfAssignsTask(
         uint256 _id
@@ -1650,7 +1783,7 @@ contract StandardCampaign {
     // ⚠️ -> needs functionality behind it, currently just a placeholder
     // funds locked in a dispute should be locked in the campaign until
     // the dispute is resolved
-    function raiseDispute(
+    function raiseDeclinedSubmissionDispute(
         uint256 _id,
         string memory _metadata
     )
@@ -1677,6 +1810,10 @@ contract StandardCampaign {
                     taskSubmissionDecisionDisputeTime,
             "Dispute must happen during dispute window"
         );
+
+        submission.status = SubmissionStatus.Disputed;
+        task.closed = true;
+        task.paid = false;
 
         dispute(_id, _metadata);
     }
